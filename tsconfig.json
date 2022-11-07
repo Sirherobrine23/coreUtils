@@ -11,17 +11,9 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
     "allowJs": true,
-    "paths": {
-      "@/*": [
-        "./node_modules/@*"
-      ]
-    }
+    "lib": ["ES6"]
   },
   "include": [
     "src/**/*"
-  ],
-  "exclude": [
-    "node_modules/",
-    "test/"
   ]
 }
