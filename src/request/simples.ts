@@ -18,7 +18,7 @@ async function gotCjs(): Promise<(typeof import("got"))["default"]> {
 }
 
 export type requestOptions = {
-  url?: string|URL,
+  url?: string,
   socket?: {
     socketPath: string,
     path?: string,
