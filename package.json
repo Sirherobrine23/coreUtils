@@ -9,26 +9,6 @@
   "license": "GPL-2.0-only",
   "main": "src/index.js",
   "types": "./src/index.d.ts",
-  "exports": {
-    ".": {
-      "require": "./src/index.js"
-    },
-    "./fs": {
-      "require": "./src/extendsFs.js"
-    },
-    "./request/simples": {
-      "require": "./src/request/simples.js"
-    },
-    "./request/large": {
-      "require": "./src/request/large.js"
-    },
-    "./request/client": {
-      "require": "./src/request/client.js"
-    },
-    "./request/github": {
-      "require": "./src/request/github.js"
-    }
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/The-Bds-Maneger/coreUtils.git"
