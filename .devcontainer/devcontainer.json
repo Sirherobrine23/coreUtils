@@ -17,22 +17,8 @@
     "--privileged"
   ],
   "mounts": [
-    "target=/var/lib/docker,source=typescript_base,type=volume",
-    "target=/lib/modules/,source=/lib/modules/,type=bind,readonly"
+    "target=/var/lib/docker,source=core_utils,type=volume"
   ],
-  "settings": {
-    "editor.tabSize": 2,
-    "editor.minimap.enabled": false,
-    "files.eol": "\n",
-    "files.trimFinalNewlines": true,
-    "files.trimTrailingWhitespace": true,
-    "googleTranslateExt.replaceText": true,
-    "material-icon-theme.showWelcomeMessage": false,
-    "gitlens.showWelcomeOnInstall": false,
-    "googleTranslateExt.languages": [
-      "en"
-    ]
-  },
   "extensions": [
     "redhat.vscode-yaml",
     "hookyqr.beautify",

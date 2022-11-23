@@ -1,58 +1,133 @@
+import { createReadStream, ReadStream as fsReadStream } from "node:fs";
 import { getOctokit } from "@actions/github";
-import { createReadStream } from "node:fs";
 import { getJSON } from "./simples";
+import stream from "node:stream";
 import fs from "node:fs/promises";
-const secret = process.env.GITHUB_SECRET||process.env.GITHUB_TOKEN;
+export type githubRelease = Awaited<ReturnType<ReturnType<typeof getOctokit>["rest"]["repos"]["listReleases"]>>["data"][number];
+
+export async function GithubRelease(username: string, repo: string, releaseTag: string): Promise<githubRelease>;
+export async function GithubRelease(username: string, repo: string): Promise<githubRelease[]>;
+export async function GithubRelease(username: string): Promise<githubRelease[]>;
+export async function GithubRelease(username: string, repo?: string, releaseTag?: string): Promise<githubRelease|githubRelease[]> {
+  let fullRepo = username;
+  if (!username) throw new Error("Repository is required, example: GithubRelease(\"Username/repo\") or GithubRelease(\"Username\", \"repo\")");
+  if (repo) {
+    if (!/\//.test(fullRepo)) fullRepo += "/"+repo;
+  }
+  if (releaseTag) {
+    if (releaseTag.toLowerCase() === "latest") return getJSON<githubRelease>(`https://api.github.com/repos/${fullRepo}/releases/latest`);
+    return getJSON<githubRelease>(`https://api.github.com/repos/${fullRepo}/releases/tags/${releaseTag}`);
+  }
+  const allReleases: githubRelease[] = [];
+  let pageIndex = 0
+  while (true) {
+    const data = await getJSON<githubRelease[]>(`https://api.github.com/repos/${fullRepo}/releases?per_page=100&page=${pageIndex}`);
+    if (data.length === 0) break;
+    allReleases.push(...data);
+  }
+  return allReleases;
+}
 
 export type releaseOptions = {
   secret?: string,
   owner: string,
   repo: string,
   tagName: string,
+  name?: string,
   prerelease?: boolean,
   /** Create release if not exists */
-  createRelease?: boolean
+  draft?: boolean,
+  createReleaseIfNotExists?: boolean,
+  target_commitish?: string,
+  releaseDescribe?: string,
+  generateReleaseNotes?: boolean
 };
 
-export async function createRelease(options: releaseOptions) {
-  options = {secret, prerelease: false, createRelease: true, ...options};
-  const {owner, repo} = options;
-  const octokit = getOctokit(secret);
-  const releases = (await octokit.rest.repos.listReleases({owner, repo})).data;
-  let release = releases.find(release => release.tag_name === options.tagName);
-  if (!release) {
-    if (!options.createRelease) throw new Error("No release with this tag");
-    release = (await octokit.rest.repos.createRelease({owner, repo, tag_name: options.tagName, prerelease: options.prerelease||false})).data;
+export type releaseOptionsUpload = {
+  /*** File name */
+  name: string,
+  /*** file path or Readable stream */
+  content: string|{
+    fileSize: number,
+    stream: stream.Readable|fsReadStream,
   }
-  async function list() {
-    return (await octokit.rest.repos.listReleaseAssets({owner, repo, release_id: release.id})).data;
+};
+
+export async function createRelease(releaseOptions: releaseOptions) {
+  if (!releaseOptions) throw new Error("Required release options");
+  releaseOptions = {
+    secret: process.env.GITHUB_SECRET||process.env.GITHUB_TOKEN,
+    prerelease: false,
+    createReleaseIfNotExists: true,
+    name: releaseOptions?.tagName,
+    ...releaseOptions
+  };
+  const octokit = getOctokit(releaseOptions.secret);
+  let release: githubRelease = (await octokit.rest.repos.listReleases({owner: releaseOptions.owner, repo: releaseOptions.repo})).data.find(release => release.tag_name === releaseOptions.tagName);
+  if (!release) {
+    if (!releaseOptions.createReleaseIfNotExists) throw new Error("No release with this tag");
+    release = (await octokit.rest.repos.createRelease({
+      owner: releaseOptions.owner,
+      repo: releaseOptions.repo,
+      tag_name: releaseOptions.tagName,
+      prerelease: releaseOptions.prerelease||false,
+      body: releaseOptions.releaseDescribe,
+      name: releaseOptions.name
+    })).data;
   }
 
-  async function deleteRelease(id_name?: number|string) {
-    if (typeof id_name === "string") id_name = (await list()).find(file => file.name === id_name)?.node_id;
+  /** List release assets files */
+  async function fileList() {
+    return (await octokit.rest.repos.listReleaseAssets({
+      owner: releaseOptions.owner,
+      repo: releaseOptions.repo,
+      release_id: release.id,
+      per_page: 100
+    })).data;
+  }
+
+  /** Delete release with node_id */
+  async function deleteRelease(node_id: number): Promise<void>;
+  /** find release assets file and delete if exists */
+  async function deleteRelease(file_name: string): Promise<void>;
+  async function deleteRelease(id_name: number|string): Promise<void> {
+    if (typeof id_name === "string") id_name = (await fileList()).find(file => file.name === id_name)?.node_id;
     if (!id_name) throw new Error("No id or file name");
     await octokit.rest.repos.deleteReleaseAsset({
-      owner, repo,
+      owner: releaseOptions.owner,
+      repo: releaseOptions.repo,
       asset_id: id_name as number
     });
   }
 
-  async function uploadFile(filePath: string, name: string) {
-    await deleteRelease(name).catch(() => {});
-    const res = await octokit.rest.repos.uploadReleaseAsset({
-      owner, repo,
+  async function uploadFile(uploadConfig: releaseOptionsUpload) {
+    if (!uploadConfig) throw new Error("Require");
+    // Delete if exists
+    if ((await fileList()).some(data => data.name === uploadConfig.name)) await deleteRelease(uploadConfig.name);
+    if (typeof uploadConfig.content === "string") uploadConfig.content = {
+      fileSize: (await fs.lstat(uploadConfig.content)).size,
+      stream: createReadStream(uploadConfig.content)
+    }
+    const assetsResponse = await octokit.rest.repos.uploadReleaseAsset({
+      owner: releaseOptions.owner,
+      repo: releaseOptions.repo,
       release_id: release.id,
-      name: name,
-      data: (createReadStream(filePath) as any) as string,
-      headers: {"content-length": (await fs.lstat(filePath)).size},
+      name: uploadConfig.name,
+      data: uploadConfig.content.stream as any as string,
+      headers: {"content-length": uploadConfig.content.fileSize},
       mediaType: {
         format: "application/octet-stream"
       },
     });
-    return res.data;
+    return assetsResponse.data;
   }
 
-  return {release, uploadFile, list, deleteRelease};
+  return {
+    uploadFile,
+    fileList,
+    deleteRelease,
+    release,
+  };
 }
 
 export type githubTree = {
@@ -68,98 +143,10 @@ export type githubTree = {
     url: string
   }[],
 };
+
 export async function githubTree(username: string, repo: string, tree: string = "main") {
   const validate = /^[a-zA-Z0-9_\-]+$/;
   if (!validate.test(username)) throw new Error("Invalid username");
   if (!validate.test(repo)) throw new Error("Invalid repository name");
   return getJSON<githubTree>(`https://api.github.com/repos/${username}/${repo}/git/trees/${tree}?recursive=true`);
-}
-
-export type githubRelease = {
-  url: string;
-  assets_url: string;
-  upload_url: string;
-  html_url: string;
-  id: number;
-  tarball_url: string;
-  zipball_url: string;
-  body: string;
-  author: {
-    login: string;
-    id: number;
-    node_id: string;
-    avatar_url: string;
-    gravatar_id: string;
-    url: string;
-    html_url: string;
-    followers_url: string;
-    following_url: string;
-    gists_url: string;
-    starred_url: string;
-    subscriptions_url: string;
-    organizations_url: string;
-    repos_url: string;
-    events_url: string;
-    received_events_url: string;
-    type: string;
-    site_admin: boolean;
-  };
-  node_id: string;
-  tag_name: string;
-  target_commitish: string;
-  name: string;
-  draft: boolean;
-  prerelease: boolean;
-  created_at: string;
-  published_at: string;
-  assets: Array<{
-    url: string;
-    id: number;
-    node_id: string;
-    name: string;
-    label: string;
-    content_type: string;
-    state: string;
-    size: number;
-    download_count: number;
-    created_at: string;
-    updated_at: string;
-    browser_download_url: string;
-    uploader: {
-      login: string;
-      id: number;
-      node_id: string;
-      avatar_url: string;
-      gravatar_id: string;
-      url: string;
-      html_url: string;
-      followers_url: string;
-      following_url: string;
-      gists_url: string;
-      starred_url: string;
-      subscriptions_url: string;
-      organizations_url: string;
-      repos_url: string;
-      events_url: string;
-      received_events_url: string;
-      type: string;
-      site_admin: boolean;
-    };
-  }>;
-};
-
-export async function GithubRelease(username: string, repo: string, releaseTag: string): Promise<githubRelease>;
-export async function GithubRelease(username: string, repo: string): Promise<githubRelease[]>;
-export async function GithubRelease(username: string): Promise<githubRelease[]>;
-export async function GithubRelease(username: string, repo?: string, releaseTag?: string): Promise<githubRelease|githubRelease[]> {
-  let fullRepo = username;
-  if (!username) throw new Error("Repository is required, example: GithubRelease(\"Username/repo\") or GithubRelease(\"Username\", \"repo\")");
-  if (repo) {
-    if (!/\//.test(fullRepo)) fullRepo += "/"+repo;
-  }
-  if (releaseTag) {
-    if (releaseTag.toLowerCase() === "latest") return getJSON<githubRelease>(`https://api.github.com/repos/${fullRepo}/releases/latest`);
-    return getJSON<githubRelease>(`https://api.github.com/repos/${fullRepo}/releases/tags/${releaseTag}`);
-  }
-  return getJSON<githubRelease[]>(`https://api.github.com/repos/${fullRepo}/releases?per_page=100`);
 }

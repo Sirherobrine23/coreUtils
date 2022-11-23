@@ -2,9 +2,9 @@ import type { Method, Request } from "got";
 import * as fs from "node:fs";
 import * as stream from "node:stream";
 async function getImport<T>(moduleName: string): Promise<T> {return eval(`import("${moduleName}")`);}
-
-export let got: Awaited<ReturnType<typeof gotCjs>>;
-async function gotCjs(): Promise<(typeof import("got"))["default"]> {
+let got: Awaited<ReturnType<typeof gotCjs>>;
+/** import got from ESM to CJS with `import()` function */
+export async function gotCjs(): Promise<(typeof import("got"))["default"]> {
   if (!got) got = (await getImport<typeof import("got")>("got")).default.extend({
     enableUnixSockets: true,
     http2: true,
@@ -22,20 +22,21 @@ export type requestOptions = {
   socket?: {
     socketPath: string,
     path?: string,
-  }
+  },
   method?: Method,
   headers?: {[headerName: string]: string[]|string},
   /** accept: `string`, `Buffer`, `stream.Readable`, and `JSON object` */
   body?: any,
 };
 
-export async function pipeFetch(options: requestOptions & {waitFinish?: boolean}): Promise<Request>;
-export async function pipeFetch(options: requestOptions & {stream: fs.WriteStream|stream.Writable, waitFinish?: boolean}): Promise<void>;
+export async function pipeFetch(options: requestOptions & {waitFinish?: false}): Promise<Request>;
+export async function pipeFetch(options: requestOptions & {stream: fs.WriteStream|stream.Writable, waitFinish?: true}): Promise<void>;
 export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStream|stream.Writable, waitFinish?: boolean}): Promise<void|Request> {
   if (!(options?.url||options?.socket)) throw new Error("Host blank")
   const urlRequest = (typeof options.url === "string")?options.url:`http://unix:${options.socket.socketPath}:${options.socket.path||"/"}`;
   const method = options.method||"GET";
   const request = {};
+  if ((["GET", "get"] as Method[]).includes(method)) delete options.body;
   if (options.body) {
     if (typeof options.body === "string") request["body"] = options.body;
     else if (Buffer.isBuffer(options.body)) request["body"] = options.body;
