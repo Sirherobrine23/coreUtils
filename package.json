@@ -27,7 +27,7 @@
     "node": ">=14.0.0"
   },
   "scripts": {
-    "test": "mocha -r ts-node/register --exit --parallel tests/**/*.ts",
+    "test": "mocha -r ts-node/register --exit --parallel src/**/*.test.ts",
     "build": "npm run test && tsc"
   },
   "devDependencies": {

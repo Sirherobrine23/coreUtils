@@ -1,4 +1,4 @@
-import { execAsync, execFileAsync, commendExists } from "../src/childPromisses";
+import { execAsync, execFileAsync, commendExists } from "./childPromisses";
 
 describe("Child Process Async/Await", () => {
   it("Command Exists", async () => await commendExists(process.platform === "win32" ? "cmd" : "bash", false));

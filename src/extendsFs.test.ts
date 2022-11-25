@@ -1,4 +1,4 @@
-import * as extendsFs from "../src/extendsFs";
+import * as extendsFs from "./extendsFs";
 
 describe("Extends FS module", function() {
   this.timeout(Infinity);
