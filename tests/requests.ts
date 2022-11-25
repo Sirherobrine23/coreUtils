@@ -1,6 +1,5 @@
 import * as httpRequest from "../src/request/simples";
 import * as httpRequestLarge from "../src/request/large";
-import * as httpRequestGithub from "../src/request/github";
 import * as httpRequestClient from "../src/request/client";
 
 const simplesRequest = "https://sirherobrine23.org", simplesJson = "https://httpbin.org/anything",
@@ -24,10 +23,4 @@ describe("HTTP Large files/requests", function() {
 describe("HTTP Client info", function() {
   this.timeout(Infinity);
   it("Get External IPs", async () => httpRequestClient.getExternalIP());
-});
-
-describe("HTTP Github API", function() {
-  this.timeout(Infinity);
-  it("Releases", async () => httpRequestGithub.GithubRelease("The-Bds-Maneger", "Bds-Maneger-Core"));
-  it("Tree", async () => httpRequestGithub.githubTree("The-Bds-Maneger", "Bds-Maneger-Core"));
 });
