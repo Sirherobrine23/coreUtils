@@ -18,7 +18,7 @@ export async function getExternalIP(): Promise<{ipv4?: string, ipv6?: string, ra
     await getJSON<testIp<"ipv6">>("https://ipv6.lookup.test-ipv6.com/ip/").catch(() => undefined),
     await getJSON<testIp<"ipv4">>("https://ipv4.lookup.test-ipv6.com/ip/").catch(() => undefined)
   ]);
-  if (!ipv4 && !ipv6) throw new Error("Cannot get user IPv4 and IPv6");
+  if (!ipv4 && !ipv6) return {};
   else if (!ipv4) return {ipv6: ipv6.ip, rawRequest: {ipv6}};
   else if (!ipv6) return {ipv4: ipv4.ip, rawRequest: {ipv4}};
   return {
