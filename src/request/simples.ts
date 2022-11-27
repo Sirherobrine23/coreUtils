@@ -1,4 +1,5 @@
 import type { Method, Request } from "got";
+import { JSDOM } from "jsdom";
 import * as fs from "node:fs";
 import * as stream from "node:stream";
 async function getImport<T>(moduleName: string): Promise<T> {return eval(`import("${moduleName}")`);}
@@ -91,7 +92,10 @@ export async function getJSON<JSONReturn = any>(request: string|requestOptions) 
 }
 
 export async function urls(options: requestOptions|string): Promise<string[]> {
-  const data = (await bufferFetch(options)).data.toString("utf8").match(/((http[s]):(([A-Za-z0-9$_.+!*(),;/?:@&~=-])|%[A-Fa-f0-9]{2}){2,}(#([a-zA-Z0-9][a-zA-Z0-9$_.+!*(),;/?:@&~=%-]*))?([A-Za-z0-9$_+!*();/?:~-]))/g);
-  if (!data) return [];
-  return data.map(res => typeof res === "string"?res:res[1]);
+  const data = new JSDOM((await bufferFetch(options)).data, {
+    url: typeof options === "string"?options:options.url
+  });
+  const urlArray = data.serialize().match(/((http[s]):(([A-Za-z0-9$_.+!*(),;/?:@&~=-])|%[A-Fa-f0-9]{2}){2,}(#([a-zA-Z0-9][a-zA-Z0-9$_.+!*(),;/?:@&~=%-]*))?([A-Za-z0-9$_+!*();/?:~-]))/g);
+  if (!urlArray) return [];
+  return ([...new Set(urlArray.map(res => typeof res === "string"?res:res[1]))]).sort();
 }
