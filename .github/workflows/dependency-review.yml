@@ -21,6 +21,6 @@ jobs:
       - name: 'Checkout Repository'
         uses: actions/checkout@v3
       
-     - run: npm ci        
+      - run: npm ci        
       - name: 'Dependency Review'
         uses: actions/dependency-review-action@v3
