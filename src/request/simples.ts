@@ -2,6 +2,7 @@ import type { Method, Request } from "got";
 import { JSDOM } from "jsdom";
 import * as fs from "node:fs";
 import * as stream from "node:stream";
+
 async function getImport<T>(moduleName: string): Promise<T> {return eval(`import("${moduleName}")`);}
 let got: Awaited<ReturnType<typeof gotCjs>>;
 /** import got from ESM to CJS with `import()` function */
@@ -91,11 +92,20 @@ export async function getJSON<JSONReturn = any>(request: string|requestOptions) 
   return JSON.parse(requestData.data.toString("utf8")) as JSONReturn;
 }
 
-export async function urls(options: requestOptions|string): Promise<string[]> {
-  const data = new JSDOM((await bufferFetch(options)).data, {
-    url: typeof options === "string"?options:options.url
+export async function jsdomRequest(options: requestOptions|string) {
+  const requestResponse = await bufferFetch(options);
+  const { serialize, window } = new JSDOM(requestResponse.data, {
+    url: typeof options === "string"?options:options?.url
   });
-  const urlArray = data.serialize().match(/((http[s]):(([A-Za-z0-9$_.+!*(),;/?:@&~=-])|%[A-Fa-f0-9]{2}){2,}(#([a-zA-Z0-9][a-zA-Z0-9$_.+!*(),;/?:@&~=%-]*))?([A-Za-z0-9$_+!*();/?:~-]))/g);
-  if (!urlArray) return [];
-  return ([...new Set(urlArray.map(res => typeof res === "string"?res:res[1]))]).sort();
+  return {
+    headers: requestResponse.headers,
+    document: window.document,
+    serialize,
+    window
+  };
+}
+
+export async function urls(options: requestOptions|string): Promise<string[]> {
+  const { document } = (await jsdomRequest(options));
+  return Array.from(document.querySelectorAll("*")).map(ele => ele["href"]||ele["src"]).filter(data => !!data?.trim()).sort();
 }
