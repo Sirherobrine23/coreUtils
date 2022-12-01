@@ -1,34 +1,35 @@
 {
-  "name": "@the-bds-maneger/core-utils",
+  "name": "@sirherobrine23/coreutils",
   "version": "1.1.1",
-  "description": "Basic utils to Bds Core and Depencies utils",
+  "description": "extensions and utilities to share with various projects",
   "private": false,
   "type": "commonjs",
-  "homepage": "https://github.com/The-Bds-Maneger/coreUtils#readme",
+  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
   "main": "src/index.js",
   "types": "./src/index.d.ts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/The-Bds-Maneger/coreUtils.git"
+    "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
   },
-  "keywords": [],
+  "keywords": [
+    "http", "got", "jsdom", "proprieties"
+  ],
   "bugs": {
-    "url": "https://github.com/The-Bds-Maneger/coreUtils/issues"
+    "url": "https://github.com/Sirherobrine23/coreUtils/issues"
   },
   "sponsor": {
     "url": "https://github.com/sponsors/Sirherobrine23"
   },
   "publishConfig": {
-    "access": "public"
-  },
-  "engines": {
-    "node": ">=14.0.0"
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
     "test": "mocha -r ts-node/register --exit --colors --parallel src/**/*.test.ts",
-    "build": "npm run test && tsc"
+    "build": "tsc",
+    "prepack": "npm run build"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.0",
