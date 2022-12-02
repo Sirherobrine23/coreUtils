@@ -3,6 +3,8 @@ import { getOctokit } from "@actions/github";
 import { getJSON } from "./simples";
 import stream from "node:stream";
 import fs from "node:fs/promises";
+import debug from "debug";
+const githubRateDebug = debug("coreutils:github:ratelimit");
 export type githubRelease = Awaited<ReturnType<ReturnType<typeof getOctokit>["rest"]["repos"]["listReleases"]>>["data"][number];
 
 export type rateLimit = {
@@ -46,12 +48,15 @@ export type rateLimit = {
   }
 }
 
+export const github_secret = process.env.GITHUB_SECRET||process.env.GITHUB_TOKEN;
 export async function getReateLimit(token?: string) {
+  token = token||github_secret;
   const rate = await getJSON<rateLimit>({
     url: "https://api.github.com/rate_limit",
-    headers: token?{Authorization: `Bearer ${token}`}:{}
+    headers: token?{Authorization: `token ${token}`}:{}
   });
-  if (rate.rate.limit >= rate.rate.used) throw new Error("Github API max requests");
+  githubRateDebug("Limit data: %O", rate);
+  if (rate.rate.remaining === 0) throw new Error("Github API max requests");
   return rate;
 }
 
@@ -66,15 +71,25 @@ export async function GithubRelease(username: string, repo?: string, releaseTag?
   }
   await getReateLimit();
   if (releaseTag) {
-    if (releaseTag.toLowerCase() === "latest") return getJSON<githubRelease>(`https://api.github.com/repos/${fullRepo}/releases/latest`);
-    return getJSON<githubRelease>(`https://api.github.com/repos/${fullRepo}/releases/tags/${releaseTag}`);
+    if (releaseTag.toLowerCase() === "latest") return getJSON<githubRelease>({
+      url: `https://api.github.com/repos/${fullRepo}/releases/latest`,
+      headers: github_secret?{Authorization: `token ${github_secret}`}:{}
+    });
+    return getJSON<githubRelease>({
+      url: `https://api.github.com/repos/${fullRepo}/releases/tags/${releaseTag}`,
+      headers: github_secret?{Authorization: `token ${github_secret}`}:{}
+    });
   }
   const allReleases: githubRelease[] = [];
   let pageIndex = 0
   while (true) {
-    const data = await getJSON<githubRelease[]>(`https://api.github.com/repos/${fullRepo}/releases?per_page=100&page=${pageIndex++}`);
+    const data = await getJSON<githubRelease[]>({
+      url: `https://api.github.com/repos/${fullRepo}/releases?per_page=100&page=${pageIndex++}`,
+      headers: github_secret?{Authorization: `token ${github_secret}`}:{}
+    });
     if (data.length === 0) break;
     allReleases.push(...data);
+    if (data.length < 100) break;
   }
   return allReleases;
 }
@@ -107,7 +122,7 @@ export type releaseOptionsUpload = {
 export async function createRelease(releaseOptions: releaseOptions) {
   if (!releaseOptions) throw new Error("Required release options");
   releaseOptions = {
-    secret: process.env.GITHUB_SECRET||process.env.GITHUB_TOKEN,
+    secret: github_secret,
     prerelease: false,
     createReleaseIfNotExists: true,
     name: releaseOptions?.tagName,
@@ -201,5 +216,8 @@ export async function githubTree(username: string, repo: string, tree: string = 
   if (!validate.test(username)) throw new Error("Invalid username");
   if (!validate.test(repo)) throw new Error("Invalid repository name");
   await getReateLimit();
-  return getJSON<githubTree>(`https://api.github.com/repos/${username}/${repo}/git/trees/${tree}?recursive=true`);
+  return getJSON<githubTree>({
+    url: `https://api.github.com/repos/${username}/${repo}/git/trees/${tree}?recursive=true`,
+    headers: github_secret?{Authorization: `token ${github_secret}`}:{}
+  });
 }

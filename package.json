@@ -14,7 +14,10 @@
     "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
   },
   "keywords": [
-    "http", "got", "jsdom", "proprieties"
+    "http",
+    "got",
+    "jsdom",
+    "proprieties"
   ],
   "bugs": {
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
@@ -33,6 +36,7 @@
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.0",
+    "@types/debug": "^4.1.7",
     "@types/jsdom": "^20.0.1",
     "@types/mocha": "^10.0.0",
     "@types/node": "^18.11.9",
@@ -44,6 +48,7 @@
   "dependencies": {
     "@actions/github": "^5.1.1",
     "adm-zip": "^0.5.9",
+    "debug": "^4.3.4",
     "got": "^12.5.3",
     "jsdom": "^20.0.3",
     "tar": "^6.1.12"
