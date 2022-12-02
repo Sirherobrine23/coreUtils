@@ -5,6 +5,56 @@ import stream from "node:stream";
 import fs from "node:fs/promises";
 export type githubRelease = Awaited<ReturnType<ReturnType<typeof getOctokit>["rest"]["repos"]["listReleases"]>>["data"][number];
 
+export type rateLimit = {
+  "resources": {
+    "core": {
+      "limit": number,
+      "remaining": number,
+      "reset": number,
+      "used": number
+    },
+    "search": {
+      "limit": number,
+      "remaining": number,
+      "reset": number,
+      "used": number
+    },
+    "graphql": {
+      "limit": number,
+      "remaining": number,
+      "reset": number,
+      "used": number
+    },
+    "integration_manifest": {
+      "limit": number,
+      "remaining": number,
+      "reset": number,
+      "used": number
+    },
+    "code_scanning_upload": {
+      "limit": number,
+      "remaining": number,
+      "reset": number,
+      "used": number
+    }
+  },
+  "rate": {
+    "limit": number,
+    "remaining": number,
+    "reset": number,
+    "used": number
+  }
+}
+
+export async function getReateLimit(token?: string) {
+  const rate = await getJSON<rateLimit>({
+    url: "https://api.github.com/rate_limit",
+    headers: token?{Authorization: `Bearer ${token}`}:{}
+  });
+  if (rate.rate.limit >= rate.rate.used) throw new Error("Github API max requests");
+  return rate;
+}
+
 export async function GithubRelease(username: string, repo: string, releaseTag: string): Promise<githubRelease>;
 export async function GithubRelease(username: string, repo: string): Promise<githubRelease[]>;
 export async function GithubRelease(username: string): Promise<githubRelease[]>;
@@ -14,6 +64,7 @@ export async function GithubRelease(username: string, repo?: string, releaseTag?
   if (repo) {
     if (!/\//.test(fullRepo)) fullRepo += "/"+repo;
   }
+  await getReateLimit();
   if (releaseTag) {
     if (releaseTag.toLowerCase() === "latest") return getJSON<githubRelease>(`https://api.github.com/repos/${fullRepo}/releases/latest`);
     return getJSON<githubRelease>(`https://api.github.com/repos/${fullRepo}/releases/tags/${releaseTag}`);
@@ -21,7 +72,7 @@ export async function GithubRelease(username: string, repo?: string, releaseTag?
   const allReleases: githubRelease[] = [];
   let pageIndex = 0
   while (true) {
-    const data = await getJSON<githubRelease[]>(`https://api.github.com/repos/${fullRepo}/releases?per_page=100&page=${pageIndex}`);
+    const data = await getJSON<githubRelease[]>(`https://api.github.com/repos/${fullRepo}/releases?per_page=100&page=${pageIndex++}`);
     if (data.length === 0) break;
     allReleases.push(...data);
   }
@@ -62,6 +113,7 @@ export async function createRelease(releaseOptions: releaseOptions) {
     name: releaseOptions?.tagName,
     ...releaseOptions
   };
+  await getReateLimit(releaseOptions.secret);
   const octokit = getOctokit(releaseOptions.secret);
   let release: githubRelease = (await octokit.rest.repos.listReleases({owner: releaseOptions.owner, repo: releaseOptions.repo})).data.find(release => release.tag_name === releaseOptions.tagName);
   if (!release) {
@@ -148,5 +200,6 @@ export async function githubTree(username: string, repo: string, tree: string = 
   const validate = /^[a-zA-Z0-9_\-]+$/;
   if (!validate.test(username)) throw new Error("Invalid username");
   if (!validate.test(repo)) throw new Error("Invalid repository name");
+  await getReateLimit();
   return getJSON<githubTree>(`https://api.github.com/repos/${username}/${repo}/git/trees/${tree}?recursive=true`);
 }
