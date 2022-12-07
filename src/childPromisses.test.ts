@@ -1,7 +1,10 @@
-import { execAsync, execFileAsync, commendExists } from "./childPromisses";
+import * as childProcess from "./childPromisses";
 
 describe("Child Process Async/Await", () => {
-  it("Command Exists", async () => await commendExists(process.platform === "win32" ? "cmd" : "bash", false));
-  it("Exec File", async () => await execFileAsync(process.platform === "win32" ? "dir" : "ls", [".."]));
-  it("Exec", async () => await execAsync(process.platform === "win32" ? "dir .." : "ls .."));
+  it("Command Exists", async () => await childProcess.commandExists(process.argv0, false));
+  it("Exec File", async () => await childProcess.execFile({
+    command: process.argv0,
+    args: ["--version"]
+  }));
+  it("Exec", async () => await childProcess.exec(`"${process.argv0}" --version`));
 });

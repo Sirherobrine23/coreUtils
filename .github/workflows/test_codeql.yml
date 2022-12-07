@@ -46,8 +46,15 @@ jobs:
         category: "/language:${{matrix.language}}"
 
   test:
-    runs-on: ubuntu-latest
-    name: "Test"
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+        - ubuntu
+        - windows
+        - macos
+    runs-on: "${{ matrix.target }}-latest"
+    name: "Test on ${{ matrix.target }}"
     steps:
     - uses: actions/checkout@v3
       name: Code checkout

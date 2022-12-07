@@ -1,50 +1,109 @@
 import type { ObjectEncodingOptions } from "node:fs";
 import * as child_process from "node:child_process";
+import debug from "debug";
+import path from "node:path";
+import { extendFs } from ".";
+const childDebug = debug("coreutils:childprocess");
 
-export type ExecFileOptions = ObjectEncodingOptions & child_process.ExecFileOptions & {stdio?: "ignore"|"inherit"};
-export function execFileAsync(command: string): Promise<{stdout: string, stderr: string}>;
-export function execFileAsync(command: string, args: (string|number)[]): Promise<{stdout: string, stderr: string}>;
-export function execFileAsync(command: string, options: ExecFileOptions): Promise<{stdout: string, stderr: string}>;
-export function execFileAsync(command: string, args: (string|number)[], options: ExecFileOptions): Promise<{stdout: string, stderr: string}>;
-export function execFileAsync(command: string, args?: ExecFileOptions|(string|number)[], options?: ExecFileOptions) {
-  let childOptions: ExecFileOptions = {};
-  let childArgs: string[] = [];
-  if (args instanceof Array) childArgs = args.map(String); else if (args instanceof Object) childOptions = args as ExecFileOptions;
-  if (options) childOptions = options;
-  childOptions.maxBuffer = Infinity;
-  if (childOptions?.env) childOptions.env = {...process.env, ...childOptions.env};
-  return new Promise<{stdout: string, stderr: string}>((resolve, rejectExec) => {
-    const child = child_process.execFile(command, childArgs.map(String), childOptions, (err, out, err2) => {if (err) return rejectExec(err);resolve({stdout: out, stderr: err2});});
-    if (options?.stdio === "inherit") {
-      child.stdout.on("data", data => process.stdout.write(data));
-      child.stderr.on("data", data => process.stderr.write(data));
-    }
+export type childProcessPromise = {
+  code?: number|NodeJS.Signals,
+  pid?: number,
+  stdout?: Buffer,
+  stderr?: Buffer
+};
+
+export type execObject<target extends "args"|"noArgs" = "args", T extends {} = {}> = {
+  command: string,
+  options?: T,
+} & (target extends "args" ? {args?: string[]} : {});
+
+export class execError extends Error {
+  public exitcode: number;
+  public exitSignal: NodeJS.Signals;
+  constructor(error: any, exitcode: number, exitSignal: NodeJS.Signals) {
+    super(error);
+    this.exitcode = exitcode;
+    this.exitSignal = exitSignal;
+  }
+}
+
+export type execFileOptions = ObjectEncodingOptions & child_process.ExecFileOptions;
+export type newExecFileOptions = execObject<"args", execFileOptions>;
+export async function execFile(command: string, args: string[], options: execFileOptions): Promise<childProcessPromise>;
+export async function execFile(command: string, args: string[]): Promise<childProcessPromise>;
+export async function execFile(command: string): Promise<childProcessPromise>;
+export async function execFile(command: newExecFileOptions): Promise<childProcessPromise>;
+export async function execFile(command: string|newExecFileOptions, args?: string[], options?: execFileOptions): Promise<childProcessPromise> {
+  if (typeof command === "string") {
+    childDebug("Converting command to object in execFile");
+    if (!args) args = [];
+    if (!options) options = {};
+    command = {
+      command: command,
+      args: args,
+      options: options
+    };
+  }
+  const fixedCommand: newExecFileOptions = {options: {}, args: [], ...command};
+  if (fixedCommand.options.maxBuffer === undefined) fixedCommand.options.maxBuffer = Infinity;
+  fixedCommand.options.env = {...process.env, ...fixedCommand.options?.env};
+  fixedCommand.options.encoding = "binary";
+  childDebug("Command: '%s', Args: %O, options: %O", fixedCommand.command, fixedCommand.args, fixedCommand.options);
+  return new Promise<childProcessPromise>((done, reject) => {
+    const child = child_process.execFile(fixedCommand.command, fixedCommand.args, fixedCommand.options, (err, stdout: Buffer, stderr: Buffer) => {
+      if (err) return reject(new execError(err, child.exitCode, child.exitSignal));
+      done({
+        code: child.exitCode||child.signalCode,
+        pid: child.pid,
+        stderr, stdout
+      });
+    });
   });
 }
 
-export type execAsyncOptions = child_process.ExecOptions & {encoding?: BufferEncoding} & {stdio?: "ignore"|"inherit"};
-export function execAsync(command: string): Promise<{stdout: string, stderr: string}>;
-export function execAsync(command: string, options: execAsyncOptions): Promise<{stdout: string, stderr: string}>;
-export function execAsync(command: string, options?: execAsyncOptions) {
-  let childOptions: execAsyncOptions = {};
-  if (options) childOptions = options;
-  if (childOptions?.env) childOptions.env = {...process.env, ...childOptions.env};
-  return new Promise<{stdout: string, stderr: string}>((resolve, rejectExec) => {
-    const child = child_process.exec(command, {...childOptions}, (err, out: string|Buffer, err2: string|Buffer) => {if (err) return rejectExec(err);resolve({stdout: ((out instanceof Buffer) ? out.toString():out), stderr: (err2 instanceof Buffer)?err2.toString():err2});});
-    if (options?.stdio === "inherit") {
-      child.stdout.on("data", data => process.stdout.write(data));
-      child.stderr.on("data", data => process.stderr.write(data));
-    }
+export type execOptions = child_process.ExecOptions & {encoding?: BufferEncoding};
+export type newExecOptions = execObject<"noArgs", execOptions>;
+export async function exec(command: string|newExecOptions, options?: execOptions): Promise<childProcessPromise>;
+export async function exec(command: string): Promise<childProcessPromise>;
+export async function exec(command: newExecOptions): Promise<childProcessPromise>;
+export async function exec(command: string|newExecOptions, options?: execOptions): Promise<childProcessPromise> {
+  if (typeof command === "string") {
+    childDebug("Converting command to object in exec");
+    if (!options) options = {};
+    command = {
+      command: command,
+      options: options
+    };
+  }
+  const fixedCommand: newExecOptions = {options: {}, ...command};
+  if (fixedCommand.options.maxBuffer === undefined) fixedCommand.options.maxBuffer = Infinity;
+  fixedCommand.options.env = {...process.env, ...fixedCommand.options?.env};
+  fixedCommand.options.encoding = "binary";
+  childDebug("Command: '%s', options: %O", fixedCommand.command, fixedCommand.options);
+  return new Promise<childProcessPromise>((done, reject) => {
+    const child = child_process.exec(fixedCommand.command, fixedCommand.options, (err, stdout: Buffer, stderr: Buffer) => {
+      if (err) return reject(new execError(err, child.exitCode, child.exitSignal));
+      done({
+        code: child.exitCode||child.signalCode,
+        pid: child.pid,
+        stderr, stdout
+      });
+    });
   });
 }
 
-export async function commendExists(command: string): Promise<boolean>;
-export async function commendExists(command: string, returnBoolean: true): Promise<boolean>;
-export async function commendExists(command: string, returnBoolean: false): Promise<string>;
-export async function commendExists(command: string, returnBoolean: boolean = true): Promise<string|boolean> {
-  let location: string;
-  if (process.platform === "win32") location = (await execAsync(`where ${command}`).catch(() => ({stdout: ""}))).stdout;
-  else location = (await execAsync(`command -v ${command}`).catch(() => ({stdout: ""}))).stdout;
+export async function commandExists(command: string): Promise<boolean>;
+export async function commandExists(command: string, returnBoolean: true): Promise<boolean>;
+export async function commandExists(command: string, returnBoolean: false): Promise<string>;
+export async function commandExists(command: string, returnBoolean: boolean = true): Promise<string|boolean> {
+  let location = "";
+  if (path.isAbsolute(command)) {
+    if (await extendFs.exists(command)) location = command;
+  } else {
+    const commandFind: newExecOptions = {command: `command -v "${command}"`};
+    if (process.platform === "win32") commandFind.command = `where "${command}"`;
+    location = (await exec(commandFind).then(res => res.stdout?.toString("utf8")||res.stderr?.toString("utf8")||"")).trim();
+  }
   if (returnBoolean) return !!location
   if (!location) throw new Error("This command not exists or is a shell function");
   return location;

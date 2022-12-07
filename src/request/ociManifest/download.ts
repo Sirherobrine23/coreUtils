@@ -13,10 +13,3 @@ export async function downloadBlob(repositoryOptions: Manifests.manifestOptions,
     }).catch(() => {});
   }));
 }
-
-const requestOp: Manifests.manifestOptions = {
-  registryBase: "ghcr.io",
-  owner: "sirherobrine23",
-  repository: "initjs"
-};
-downloadBlob(requestOp).then(console.log);

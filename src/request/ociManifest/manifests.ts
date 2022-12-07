@@ -1,4 +1,3 @@
-import type { HTTPError } from "got";
 import * as httpRequest from "../simples";
 
 export const ARCH_GO_NODE: {[arch in NodeJS.Architecture]?: string} = {
@@ -148,16 +147,6 @@ export async function fetchPackage(repositoryOptions: manifestOptions, options?:
         "application/json"
       ]
     }
-  }).catch((err: HTTPError) => {
-    if (err?.response?.body) {
-      if (typeof err.response.body === "string") throw new Error(err.response.body);
-      else if (Buffer.isBuffer(err.response.body)) {
-        const data = err.response.body.toString("utf8");
-        if (err.response.headers["content-type"] === "application/json") throw JSON.parse(data);
-        throw new Error(data);
-      }
-    }
-    throw err;
   });
   if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.list.v2+json") {
     const platformsManifest: dockerManifestMultiArchPlatform = manifest;

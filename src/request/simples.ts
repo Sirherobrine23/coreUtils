@@ -3,8 +3,8 @@ import { JSDOM } from "jsdom";
 import * as fs from "node:fs";
 import * as stream from "node:stream";
 import debug from "debug";
-const pipeDebug = debug("coreutils:pipe");
-const bufferDebug = debug("coreutils:buffer");
+const pipeDebug = debug("coreutils:request:pipe");
+const bufferDebug = debug("coreutils:request:buffer");
 
 async function getImport<T>(moduleName: string): Promise<T> {return eval(`import("${moduleName}")`);}
 let got: Awaited<ReturnType<typeof gotCjs>>;
