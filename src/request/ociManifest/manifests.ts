@@ -1,4 +1,6 @@
 import * as httpRequest from "../simples";
+import debug from "debug";
+const manifestDebug = debug("coreutils:oci:manifest");
 
 export const ARCH_GO_NODE: {[arch in NodeJS.Architecture]?: string} = {
   x64: "amd64",
@@ -40,12 +42,11 @@ export type requestToken = {
   issued_at?: string
 }
 export async function getToken(options: manifestOptions) {
-  // /token?scope=repository:the-bds-maneger/android_musl:pull
-  let url = (options.authBase||options.registryBase)+"/token?";
-  if (!/http[s]:\/\//.test(url)) url = `http://${url}`;
-  if (options.authService) url += `service=${options.authService}&`
-  url += `scope=repository:${options.owner}/${options.repository}:pull`;
-  const data = await httpRequest.getJSON<requestToken>(url);
+  const request: httpRequest.requestOptions = {url: (options.authBase||options.registryBase)+"/token", query: {}};
+  if (!/http[s]:\/\//.test(request.url)) request.url = `http://${request.url}`;
+  if (typeof options.authService === "string") request.query.service = options.authService;
+  request.query.scope = `repository:${options.owner}/${options.repository}:pull`;
+  const data = await httpRequest.getJSON<requestToken>(request);
   return data.token;
 }
 
@@ -132,8 +133,9 @@ export type ociManifestLayer = {
 };
 
 export type fetchPackageOptions = {platform?: NodeJS.Platform, arch?: NodeJS.Architecture};
-export async function fetchPackage(repositoryOptions: manifestOptions, options?: fetchPackageOptions): Promise<dockerManifestLayer|ociManifestLayer> {
+export async function getManifest(repositoryOptions: manifestOptions, options?: fetchPackageOptions): Promise<dockerManifestLayer|ociManifestLayer> {
   const token = await getToken(repositoryOptions);
+  manifestDebug("Fetching with config: %O", repositoryOptions);
   const manifest = await httpRequest.getJSON({
     url: `http://${repositoryOptions.registryBase}/v2/${repositoryOptions.owner}/${repositoryOptions.repository}/manifests/${repositoryOptions.tagDigest||(await getTags(repositoryOptions)).tags.at(-1)}`,
     headers: {
@@ -149,22 +151,27 @@ export async function fetchPackage(repositoryOptions: manifestOptions, options?:
     }
   });
   if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.list.v2+json") {
+    manifestDebug("Switch to Docker manifest with multi arch, Manifest: %O", manifest);
     const platformsManifest: dockerManifestMultiArchPlatform = manifest;
     const find = platformsManifest.manifests.find(target => target.platform.architecture === ARCH_GO_NODE[options?.arch||process.arch] && target.platform.os === OS_GO_NODE[options?.platform||process.platform]);
     if (!find) throw new Error("Current platform not avaible")
-    return fetchPackage({...repositoryOptions, tagDigest: find.digest});
+    return getManifest({...repositoryOptions, tagDigest: find.digest});
   } else if (manifest?.manifests?.some(layer => layer?.mediaType === "application/vnd.oci.image.manifest.v1+json")) {
+    manifestDebug("Switch to OCI manifest Multi Arch, Manifest: %O", manifest);
     const ociManeifestPlatforms: ociManifestMultiArchPlatform = manifest;
     const find = ociManeifestPlatforms.manifests.find(target => target.platform.architecture === ARCH_GO_NODE[options?.arch||process.arch] && target.platform.os === OS_GO_NODE[options?.platform||process.platform]);
     if (!find) throw new Error("Current platform not avaible")
-    return fetchPackage({...repositoryOptions, tagDigest: find.digest});
+    return getManifest({...repositoryOptions, tagDigest: find.digest});
   } else if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.v2+json") {
+    manifestDebug("Docker layer manifest");
     const manifestLayers: dockerManifestLayer = manifest;
     return manifestLayers;
   } else if (manifest?.config?.mediaType === "application/vnd.oci.image.config.v1+json") {
+    manifestDebug("OCI layer manifest");
     const manifestLayers: ociManifestLayer = manifest;
     return manifestLayers;
   }
+  manifestDebug("Unknow manifest: %O", manifest);
   throw new Error("Invalid manifest");
 }
 
@@ -189,7 +196,7 @@ export type blobInfo = {
 };
 
 export async function fetchBlobManifest(repositoryOptions: manifestOptions, options?: fetchPackageOptions) {
-  const manifest = await fetchPackage(repositoryOptions, options);
+  const manifest = await getManifest(repositoryOptions, options);
   const token = await getToken(repositoryOptions);
   return httpRequest.getJSON<blobInfo>({
     url: `http://${repositoryOptions.registryBase}/v2/${repositoryOptions.owner}/${repositoryOptions.repository}/blobs/${manifest.config.digest}`,

@@ -28,6 +28,7 @@ export type requestOptions = {
     socketPath: string,
     path?: string,
   },
+  query?: {[key: string]: string},
   method?: Method,
   headers?: {[headerName: string]: string[]|string},
   /** accept: `string`, `Buffer`, `stream.Readable`, and `JSON object` */
@@ -38,7 +39,15 @@ export async function pipeFetch(options: requestOptions & {waitFinish?: false}):
 export async function pipeFetch(options: requestOptions & {stream: fs.WriteStream|stream.Writable, waitFinish?: true}): Promise<void>;
 export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStream|stream.Writable, waitFinish?: boolean}): Promise<void|Request> {
   if (!(options?.url||options?.socket)) throw new Error("Host blank")
-  const urlRequest = (typeof options.url === "string")?options.url:`http://unix:${options.socket.socketPath}:${options.socket.path||"/"}`;
+  let urlRequest = (typeof options.url === "string")?options.url:`http://unix:${options.socket.socketPath}:${options.socket.path||"/"}`;
+  if (options.query) {
+    const query: requestOptions["query"] = options.query;
+    const queryMap = Object.keys(query).map(key => `${key}=${query[key]}`);
+    if (queryMap.length > 0) {
+      if (/.*\?[\s\S\W]+$/.test(urlRequest)) urlRequest += "&"+queryMap.join("&");
+      else urlRequest += "?"+queryMap.join("&");
+    }
+  }
   const method = options.method||"GET";
   const request = {};
   if ((["GET", "get"] as Method[]).includes(method)) delete options.body;
@@ -76,7 +85,15 @@ export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStre
 export async function bufferFetch(options: string|requestOptions) {
   if (typeof options === "string") options = {url: options};
   if (!(options.url||options.socket)) throw new Error("Host blank")
-  const urlRequest = (typeof options.url === "string")?options.url:`http://unix:${options.socket.socketPath}:${options.socket.path||"/"}`;
+  let urlRequest = (typeof options.url === "string")?options.url:`http://unix:${options.socket.socketPath}:${options.socket.path||"/"}`;
+  if (options.query) {
+    const query: requestOptions["query"] = options.query;
+    const queryMap = Object.keys(query).map(key => `${key}=${query[key]}`);
+    if (queryMap.length > 0) {
+      if (/.*\?[\s\S\W]+$/.test(urlRequest)) urlRequest += "&"+queryMap.join("&");
+      else urlRequest += "?"+queryMap.join("&");
+    }
+  }
   const method = options.method||"GET";
   const request = {};
   if (options.body) {

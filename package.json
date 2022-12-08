@@ -34,7 +34,7 @@
     "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
-    "test": "mocha -r ts-node/register --exit --colors --parallel src/**/*.test.ts",
+    "test": "mocha -r ts-node/register --exit --colors --full-trace --recursive -t 0 --parallel --extension test.ts src",
     "build": "tsc",
     "prepack": "npm run build"
   },
