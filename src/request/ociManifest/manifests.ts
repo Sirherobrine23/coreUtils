@@ -25,6 +25,42 @@ export const OS_GO_NODE: {[platform in NodeJS.Platform]?: string} = {
   openbsd: "openbsd"
 };
 
+const dockerImageRegex = /^(([a-z0-9\._\-]+(:([0-9]+))?)\/)?(([a-z0-9\._\-]+)\/)?([a-z0-9\._\-\/:]+)(@(sha256:\S+|\S+|))?$/;
+const tagImage = /:([\w\S]+)$/;
+
+export type ImageObject = {
+  registry: string,
+  owner: string,
+  imageName: string,
+  tag: string,
+  sha256?: string
+}
+export function parseImageURI(image: string): ImageObject {
+  if (!image) throw new TypeError("Required image argument!");
+  if (!dockerImageRegex.test(image)) throw new TypeError("Invalid image format");
+  let [,, registry,,,, owner, imageName,, sha256] = image.match(dockerImageRegex);
+  let tag: string;
+  if (tagImage.test(imageName)) {
+    const [, newtag] = imageName.match(tagImage);
+    tag = newtag;
+    imageName = imageName.replace(tagImage, "");
+  }
+
+  // fix owner
+  if (!owner && !!registry) {
+    owner = registry;
+    registry = undefined;
+  }
+
+  return {
+    registry: registry||"registry-1.docker.io",
+    owner: owner||"library",
+    imageName,
+    tag: tag||"latest",
+    sha256
+  };
+}
+
 export type manifestOptions = {
   authBase?: string,
   authService?: string,
@@ -34,6 +70,21 @@ export type manifestOptions = {
   owner: string,
   tagDigest?: string
 };
+
+export function toManifestOptions(image: string|ImageObject): manifestOptions {
+  if (typeof image === "string") image = parseImageURI(image);
+  let tagDigest = image.tag;
+  if (image.sha256) {
+    image.imageName += ":"+image.tag;
+    tagDigest = image.sha256;
+  }
+  return {
+    registryBase: image.registry,
+    owner: image.owner,
+    repository: image.imageName,
+    tagDigest
+  };
+}
 
 export type requestToken = {
   token: string,
@@ -133,7 +184,8 @@ export type ociManifestLayer = {
 };
 
 export type fetchPackageOptions = {platform?: NodeJS.Platform, arch?: NodeJS.Architecture};
-export async function getManifest(repositoryOptions: manifestOptions, options?: fetchPackageOptions): Promise<dockerManifestLayer|ociManifestLayer> {
+export async function getManifest(repositoryOptions: manifestOptions|string, options?: fetchPackageOptions): Promise<dockerManifestLayer|ociManifestLayer> {
+  if (typeof repositoryOptions === "string") repositoryOptions = toManifestOptions(repositoryOptions);
   const token = await getToken(repositoryOptions);
   manifestDebug("Fetching with config: %O", repositoryOptions);
   const manifest = await httpRequest.getJSON({
