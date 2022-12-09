@@ -14,9 +14,6 @@ jobs:
   publishpackage:
     runs-on: ubuntu-latest
     name: Publish
-    permissions:
-      contents: read
-      packages: write
     steps:
     - uses: actions/checkout@v3
       name: Code checkout
@@ -31,7 +28,7 @@ jobs:
       name: Setup node.js
       with:
         node-version: latest
-        registry-url: https://npm.pkg.github.com
+        registry-url: https://registry.npmjs.org/
 
     - run: sudo npm install -g ts-node typescript
       name: Install typescript and ts-node
@@ -63,7 +60,7 @@ jobs:
     - run: npm publish --tag ${{ github.event.release.prerelease && 'next' || 'latest' }}
       name: Publish to npm
       env:
-        NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        NODE_AUTH_TOKEN: ${{ secrets.NPMTOKEN }}
 
     # Create pull request to update version in main branch
     - uses: peter-evans/create-pull-request@v4
@@ -73,7 +70,6 @@ jobs:
         commit-message: Update version v${{ env.PACKAGE_VERSION }}
         delete-branch: true
         assignees: SirHerobrine23
-        reviewers: SirHerobrine23
         branch: update-version
         title: Update package version v${{ env.PACKAGE_VERSION }}
         body: Auto update package version, created with GitHub Actions
