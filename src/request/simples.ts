@@ -3,6 +3,7 @@ import { JSDOM } from "jsdom";
 import * as fs from "node:fs";
 import * as stream from "node:stream";
 import debug from "debug";
+const responseDebug = debug("coreutils:request:response");
 const pipeDebug = debug("coreutils:request:pipe");
 const bufferDebug = debug("coreutils:request:buffer");
 
@@ -20,6 +21,29 @@ export async function gotCjs(): Promise<(typeof import("got"))["default"]> {
     }
   });
   return got;
+}
+
+export class responseError {
+  public code: string;
+  public textError: string;
+  public dataOriginal: any;
+  public data: any;
+  constructor(err: RequestError) {
+    if (err?.code && err?.request) {
+      this.code = err?.code;
+      this.textError = err?.message;
+      if (err?.response?.body) {
+        this.dataOriginal = err.response.body;
+        if (Buffer.isBuffer(err.response.body)) this.data = err.response.body.toString("utf8");
+        try {
+          this.data = JSON.parse(this.data);
+        } catch {}
+      }
+      responseDebug("catch error, %O", this);
+      return this;
+    }
+    throw err;
+  }
 }
 
 export type requestOptions = {
@@ -57,7 +81,7 @@ export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStre
     else if (options.body instanceof stream.Writable||options.body instanceof fs.WriteStream) request["body"] = options.body;
     else request["json"] = options.body;
   }
-  pipeDebug("Fetching data with options: %O", {...options, stream: null});
+  pipeDebug("Fetching data with options: %O", {...options, stream: "replace to show"});
   const gotStream = (await gotCjs()).stream(urlRequest, {
     isStream: true,
     headers: options.headers||{},
@@ -77,7 +101,7 @@ export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStre
         if (options.waitFinish) return options.stream.once("finish", done);
         return done();
       });
-    });
+    }).catch(err => Promise.reject(new responseError(err)));
     pipeDebug("pipe end");
   }
 }
@@ -116,23 +140,7 @@ export async function bufferFetch(options: string|requestOptions) {
       data: Buffer.from(res.body),
       response: res
     };
-  }).catch((err: RequestError) => {
-    const newErrorObject = {
-      code: err?.code,
-      textError: err?.message,
-      data: undefined
-    };
-    if (err?.response?.body) {
-      if (Buffer.isBuffer(err.response.body)) newErrorObject.data = err.response.body.toString("utf8");
-    }
-    if (typeof newErrorObject.data === "string") {
-      try {
-        newErrorObject.data = JSON.parse(newErrorObject.data);
-      } catch {}
-    }
-    bufferDebug("catch error to %s, error object: %O", urlRequest, newErrorObject);
-    throw newErrorObject;
-  });
+  }).catch(err => Promise.reject(new responseError(err)));
 }
 
 export async function getJSON<JSONReturn = any>(request: string|requestOptions) {

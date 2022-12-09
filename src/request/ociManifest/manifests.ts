@@ -1,4 +1,5 @@
 import * as httpRequest from "../simples";
+import * as dockerUtils from "./utils";
 import debug from "debug";
 const manifestDebug = debug("coreutils:oci:manifest");
 
@@ -25,42 +26,6 @@ export const OS_GO_NODE: {[platform in NodeJS.Platform]?: string} = {
   openbsd: "openbsd"
 };
 
-const dockerImageRegex = /^(([a-z0-9\._\-]+(:([0-9]+))?)\/)?(([a-z0-9\._\-]+)\/)?([a-z0-9\._\-\/:]+)(@(sha256:\S+|\S+|))?$/;
-const tagImage = /:([\w\S]+)$/;
-
-export type ImageObject = {
-  registry: string,
-  owner: string,
-  imageName: string,
-  tag: string,
-  sha256?: string
-}
-export function parseImageURI(image: string): ImageObject {
-  if (!image) throw new TypeError("Required image argument!");
-  if (!dockerImageRegex.test(image)) throw new TypeError("Invalid image format");
-  let [,, registry,,,, owner, imageName,, sha256] = image.match(dockerImageRegex);
-  let tag: string;
-  if (tagImage.test(imageName)) {
-    const [, newtag] = imageName.match(tagImage);
-    tag = newtag;
-    imageName = imageName.replace(tagImage, "");
-  }
-
-  // fix owner
-  if (!owner && !!registry) {
-    owner = registry;
-    registry = undefined;
-  }
-
-  return {
-    registry: registry||"registry-1.docker.io",
-    owner: owner||"library",
-    imageName,
-    tag: tag||"latest",
-    sha256
-  };
-}
-
 export type manifestOptions = {
   authBase?: string,
   authService?: string,
@@ -71,54 +36,7 @@ export type manifestOptions = {
   tagDigest?: string
 };
 
-export function toManifestOptions(image: string|ImageObject): manifestOptions {
-  if (typeof image === "string") image = parseImageURI(image);
-  let tagDigest = image.tag;
-  if (image.sha256) {
-    image.imageName += ":"+image.tag;
-    tagDigest = image.sha256;
-  }
-  return {
-    registryBase: image.registry,
-    owner: image.owner,
-    repository: image.imageName,
-    tagDigest
-  };
-}
-
-export type requestToken = {
-  token: string,
-  access_token?: string,
-  expires_in?: number,
-  issued_at?: string
-}
-export async function getToken(options: manifestOptions) {
-  const request: httpRequest.requestOptions = {url: (options.authBase||options.registryBase)+"/token", query: {}};
-  if (!/http[s]:\/\//.test(request.url)) request.url = `http://${request.url}`;
-  if (typeof options.authService === "string") request.query.service = options.authService;
-  request.query.scope = `repository:${options.owner}/${options.repository}:pull`;
-  const data = await httpRequest.getJSON<requestToken>(request);
-  return data.token;
-}
-
 export type tagList = {name: string, tags: string[]};
-export async function getTags(repositoryOptions: manifestOptions) {
-  const token = await getToken(repositoryOptions);
-  return httpRequest.getJSON<tagList>({
-    url: `http://${repositoryOptions.registryBase}/v2/${repositoryOptions.owner}/${repositoryOptions.repository}/tags/list`,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      accept: [
-        "application/vnd.oci.image.manifest.v1+json",
-        "application/vnd.docker.distribution.manifest.v2+json",
-        "application/vnd.docker.distribution.manifest.list.v2+json",
-        "application/vnd.oci.image.index.v1+json",
-        "application/vnd.docker.distribution.manifest.v1+prettyjws",
-        "application/json"
-      ]
-    }
-  });
-}
 
 export type dockerManifestMultiArchPlatform = {
   mediaType: "application/vnd.docker.distribution.manifest.list.v2+json",
@@ -175,57 +93,13 @@ export type ociManifestLayer = {
     size: number
   },
   layers: {
-    mediaType: "application/vnd.oci.image.layer.v1.tar"|"application/vnd.oci.image.layer.v1.tar+gzip"|"application/vnd.oci.image.layer.v1.tar+zstd"|"application/vnd.oci.image.layer.nondistributable.v1.tar"|"application/vnd.oci.image.layer.nondistributable.v1.tar+gzip"|"and application/vnd.oci.image.layer.nondistributable.v1.tar+zstd",
+    mediaType: "application/vnd.oci.image.layer.v1.tar"|"application/vnd.oci.image.layer.v1.tar+gzip"|"application/vnd.oci.image.layer.v1.tar+zstd"|"application/vnd.oci.image.layer.nondistributable.v1.tar"|"application/vnd.oci.image.layer.nondistributable.v1.tar+gzip"|"application/vnd.oci.image.layer.nondistributable.v1.tar+zstd",
     digest: string,
     size: number,
     annotations?: {[key: string]: string}
   }[],
   annotations?: {[key: string]: string}
 };
-
-export type fetchPackageOptions = {platform?: NodeJS.Platform, arch?: NodeJS.Architecture};
-export async function getManifest(repositoryOptions: manifestOptions|string, options?: fetchPackageOptions): Promise<dockerManifestLayer|ociManifestLayer> {
-  if (typeof repositoryOptions === "string") repositoryOptions = toManifestOptions(repositoryOptions);
-  const token = await getToken(repositoryOptions);
-  manifestDebug("Fetching with config: %O", repositoryOptions);
-  const manifest = await httpRequest.getJSON({
-    url: `http://${repositoryOptions.registryBase}/v2/${repositoryOptions.owner}/${repositoryOptions.repository}/manifests/${repositoryOptions.tagDigest||(await getTags(repositoryOptions)).tags.at(-1)}`,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      accept: [
-        "application/vnd.oci.image.manifest.v1+json",
-        "application/vnd.docker.distribution.manifest.v2+json",
-        "application/vnd.docker.distribution.manifest.list.v2+json",
-        "application/vnd.oci.image.index.v1+json",
-        "application/vnd.docker.distribution.manifest.v1+prettyjws",
-        "application/json"
-      ]
-    }
-  });
-  if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.list.v2+json") {
-    manifestDebug("Switch to Docker manifest with multi arch, Manifest: %O", manifest);
-    const platformsManifest: dockerManifestMultiArchPlatform = manifest;
-    const find = platformsManifest.manifests.find(target => target.platform.architecture === ARCH_GO_NODE[options?.arch||process.arch] && target.platform.os === OS_GO_NODE[options?.platform||process.platform]);
-    if (!find) throw new Error("Current platform not avaible")
-    return getManifest({...repositoryOptions, tagDigest: find.digest});
-  } else if (manifest?.manifests?.some(layer => layer?.mediaType === "application/vnd.oci.image.manifest.v1+json")) {
-    manifestDebug("Switch to OCI manifest Multi Arch, Manifest: %O", manifest);
-    const ociManeifestPlatforms: ociManifestMultiArchPlatform = manifest;
-    const find = ociManeifestPlatforms.manifests.find(target => target.platform.architecture === ARCH_GO_NODE[options?.arch||process.arch] && target.platform.os === OS_GO_NODE[options?.platform||process.platform]);
-    if (!find) throw new Error("Current platform not avaible")
-    return getManifest({...repositoryOptions, tagDigest: find.digest});
-  } else if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.v2+json") {
-    manifestDebug("Docker layer manifest");
-    const manifestLayers: dockerManifestLayer = manifest;
-    return manifestLayers;
-  } else if (manifest?.config?.mediaType === "application/vnd.oci.image.config.v1+json") {
-    manifestDebug("OCI layer manifest");
-    const manifestLayers: ociManifestLayer = manifest;
-    return manifestLayers;
-  }
-  manifestDebug("Unknow manifest: %O", manifest);
-  throw new Error("Invalid manifest");
-}
 
 export type blobInfo = {
   architecture: string,
@@ -247,21 +121,90 @@ export type blobInfo = {
   }
 };
 
-export async function fetchBlobManifest(repositoryOptions: manifestOptions, options?: fetchPackageOptions) {
-  const manifest = await getManifest(repositoryOptions, options);
-  const token = await getToken(repositoryOptions);
-  return httpRequest.getJSON<blobInfo>({
-    url: `http://${repositoryOptions.registryBase}/v2/${repositoryOptions.owner}/${repositoryOptions.repository}/blobs/${manifest.config.digest}`,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      accept: [
-        "application/vnd.oci.image.manifest.v1+json",
-        "application/vnd.docker.distribution.manifest.v2+json",
-        "application/vnd.docker.distribution.manifest.list.v2+json",
-        "application/vnd.oci.image.index.v1+json",
-        "application/vnd.docker.distribution.manifest.v1+prettyjws",
-        "application/json"
-      ]
+export type optionsManifests = {platform?: NodeJS.Platform, arch?: NodeJS.Architecture};
+export default Manifest;
+export async function Manifest(repo: string|manifestOptions, options: optionsManifests = {platform: process.platform, arch: process.arch}) {
+  if (typeof repo === "string") {
+    manifestDebug("Convert %s to repo object", repo);
+    repo = dockerUtils.toManifestOptions(repo);
+  }
+  const repoConfig: manifestOptions = repo;
+  const endpointsControl = await dockerUtils.mountEndpoints(repoConfig.registryBase, {owner: repoConfig.owner, repo: repoConfig.repository});
+  const manifestHeaders = {
+    accept: [
+      "application/vnd.oci.image.manifest.v1+json",
+      "application/vnd.docker.distribution.manifest.v2+json",
+      "application/vnd.docker.distribution.manifest.list.v2+json",
+      "application/vnd.oci.image.index.v1+json",
+      "application/vnd.docker.distribution.manifest.v1+prettyjws",
+      "application/json"
+    ]
+  };
+
+  async function getTags() {
+    const token = await dockerUtils.getToken(repoConfig);
+    const response = await httpRequest.getJSON<tagList>({
+      url: endpointsControl.tags.list(),
+      headers: {
+        ...manifestHeaders,
+        Authorization: `Bearer ${token}`,
+      }
+    });
+    return response.tags;
+  }
+
+  async function imageManifest(reference?: string): Promise<dockerManifestLayer|ociManifestLayer> {
+    if (!reference) reference = (await getTags()).at(-1);
+    const requestEndpoint = endpointsControl.manifest(reference);
+    const token = await dockerUtils.getToken(repoConfig);
+    const manifest = await httpRequest.getJSON({
+      url: requestEndpoint,
+      headers: {
+        ...manifestHeaders,
+        Authorization: `Bearer ${token}`
+      }
+    });
+    if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.list.v2+json") {
+      manifestDebug("Switch to Docker manifest with multi arch, Manifest: %O", manifest);
+      const platformsManifest: dockerManifestMultiArchPlatform = manifest;
+      const find = platformsManifest.manifests.find(target => target.platform.architecture === ARCH_GO_NODE[options?.arch||process.arch] && target.platform.os === OS_GO_NODE[options?.platform||process.platform]);
+      if (!find) throw new Error("Current platform not avaible")
+      return imageManifest(find.digest);
+    } else if (manifest?.manifests?.some(layer => layer?.mediaType === "application/vnd.oci.image.manifest.v1+json")) {
+      manifestDebug("Switch to OCI manifest Multi Arch, Manifest: %O", manifest);
+      const ociManeifestPlatforms: ociManifestMultiArchPlatform = manifest;
+      const find = ociManeifestPlatforms.manifests.find(target => target.platform.architecture === ARCH_GO_NODE[options?.arch||process.arch] && target.platform.os === OS_GO_NODE[options?.platform||process.platform]);
+      if (!find) throw new Error("Current platform not avaible")
+      return imageManifest(find.digest);
+    } else if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.v2+json") {
+      manifestDebug("Docker layer manifest");
+      const manifestLayers: dockerManifestLayer = manifest;
+      return manifestLayers;
+    } else if (manifest?.config?.mediaType === "application/vnd.oci.image.config.v1+json") {
+      manifestDebug("OCI layer manifest");
+      const manifestLayers: ociManifestLayer = manifest;
+      return manifestLayers;
     }
-  });
+    manifestDebug("Unknow manifest: %O", manifest);
+    throw new Error("Invalid manifest");
+  }
+
+  async function blobsManifest(reference?: string) {
+    const manifest = await imageManifest(reference);
+    const token = await dockerUtils.getToken(repoConfig);
+    return httpRequest.getJSON<blobInfo>({
+      url: endpointsControl.blob.get_delete(manifest.config.digest),
+      headers: {
+        ...manifestHeaders,
+        Authorization: `Bearer ${token}`
+      }
+    });
+  }
+
+  return {
+    repoConfig, endpointsControl,
+    imageManifest,
+    blobsManifest,
+    getTags,
+  };
 }
