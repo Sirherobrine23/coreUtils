@@ -3,6 +3,7 @@ import { JSDOM } from "jsdom";
 import * as fs from "node:fs";
 import * as stream from "node:stream";
 import debug from "debug";
+const requestsDebug = debug("coreutils:request");
 const responseDebug = debug("coreutils:request:response");
 const pipeDebug = debug("coreutils:request:pipe");
 const bufferDebug = debug("coreutils:request:buffer");
@@ -55,7 +56,7 @@ export type requestOptions = {
   query?: {[key: string]: string},
   method?: Method,
   headers?: {[headerName: string]: string[]|string},
-  /** accept: `string`, `Buffer`, `stream.Readable`, and `JSON object` */
+  /** accept: `string`, `Buffer`, `stream.Readable`, `fs.ReadStream`, and `JSON object` */
   body?: any,
 };
 
@@ -76,12 +77,23 @@ export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStre
   const request = {};
   if ((["GET", "get"] as Method[]).includes(method)) delete options.body;
   if (options.body) {
-    if (typeof options.body === "string") request["body"] = options.body;
-    else if (Buffer.isBuffer(options.body)) request["body"] = options.body;
-    else if (options.body instanceof stream.Writable||options.body instanceof fs.WriteStream) request["body"] = options.body;
-    else request["json"] = options.body;
+    if (typeof options.body === "string") {
+      requestsDebug("Switch to body string '%s'", urlRequest);
+      request["body"] = options.body;
+    } else if (Buffer.isBuffer(options.body)) {
+      requestsDebug("Switch to body Buffer '%s'", urlRequest);
+      request["body"] = options.body;
+    }
+    else if (options.body instanceof stream.Readable||options.body instanceof fs.ReadStream) {
+      requestsDebug("Switch to body Stream '%s'", urlRequest);
+      request["body"] = options.body;
+    } else {
+      requestsDebug("Switch to json body '%s'", urlRequest);
+      request["json"] = options.body;
+    }
+    delete options.body;
   }
-  pipeDebug("Fetching data with options: %O", {...options, stream: "replace to show"});
+  pipeDebug("Fetching data with options: %O", {...options, ...request, stream: "replace to show"});
   const gotStream = (await gotCjs()).stream(urlRequest, {
     isStream: true,
     headers: options.headers||{},
@@ -121,13 +133,24 @@ export async function bufferFetch(options: string|requestOptions) {
   const method = options.method||"GET";
   const request = {};
   if (options.body) {
-    if (typeof options.body === "string") request["body"] = options.body;
-    else if (Buffer.isBuffer(options.body)) request["body"] = options.body;
-    else if (options.body instanceof stream.Writable||options.body instanceof fs.WriteStream) request["body"] = options.body;
-    else request["json"] = options.body;
+    if (typeof options.body === "string") {
+      requestsDebug("Switch to body string '%s'", urlRequest);
+      request["body"] = options.body;
+    } else if (Buffer.isBuffer(options.body)) {
+      requestsDebug("Switch to body Buffer '%s'", urlRequest);
+      request["body"] = options.body;
+    }
+    else if (options.body instanceof stream.Readable||options.body instanceof fs.ReadStream) {
+      requestsDebug("Switch to body Stream '%s'", urlRequest);
+      request["body"] = options.body;
+    } else {
+      requestsDebug("Switch to json body '%s'", urlRequest);
+      request["json"] = options.body;
+    }
+    delete options.body;
   }
 
-  bufferDebug("Fetching data with options: %O", options);
+  requestsDebug("Fetching data with options: %O", {...options, ...request});
   return (await gotCjs())(urlRequest, {
     responseType: "buffer",
     headers: options.headers||{},

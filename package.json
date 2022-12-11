@@ -9,10 +9,6 @@
   "license": "GPL-2.0",
   "main": "src/index.js",
   "types": "./src/index.d.ts",
-  "exports": {
-    "import": "./index.mjs",
-    "require": "./src/index.js"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
