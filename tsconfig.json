@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
     "esModuleInterop": true,
-    "module": "commonjs",
-    "moduleResolution": "node",
-    "target": "ES2019",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ESNext",
     "declaration": true,
     "strict": false,
     "noUnusedLocals": true,
@@ -18,5 +18,8 @@
   ],
   "exclude": [
     "src/**/*.test.ts"
-  ]
+  ],
+  "ts-node": {
+    "esm": true
+  }
 }

@@ -1,9 +1,9 @@
 {
   "name": "@sirherobrine23/coreutils",
-  "version": "1.3.1",
+  "version": "2.0.0-rc1",
   "description": "extensions and utilities to share with various projects",
   "private": false,
-  "type": "commonjs",
+  "type": "module",
   "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
@@ -30,7 +30,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "test": "mocha -r ts-node/register --exit --colors --full-trace --recursive -t 0 --parallel --extension test.ts src",
+    "test": "mocha src",
     "build": "tsc",
     "prepack": "npm run build"
   },

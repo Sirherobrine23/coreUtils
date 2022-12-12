@@ -1,4 +1,4 @@
-import * as childProcess from "./childPromisses";
+import * as childProcess from "./childPromisses.js";
 
 describe("Child Process Async/Await", () => {
   it("Command Exists", async () => await childProcess.commandExists(process.argv0, false));

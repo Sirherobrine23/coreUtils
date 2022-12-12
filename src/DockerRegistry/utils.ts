@@ -1,9 +1,9 @@
+import * as httpRequest from "../request/simples.js";
 import utils from "node:util";
 import crypto from "node:crypto";
 import { Readable as streamReadable, Duplex as streamDuplex } from "node:stream";
 import { ReadStream as fsReadStream } from "node:fs";
-import * as httpRequest from "../simples";
-import { manifestOptions } from "./manifests";
+import { manifestOptions } from "./manifests.js";
 
 export type registryInfo = {
   url: string,
@@ -148,19 +148,17 @@ export function toManifestOptions(image: string|ImageObject): manifestOptions & 
     owner: image.owner,
     repository: image.imageName,
     tagDigest,
-    ...(image.registry.endsWith("docker.io")?{
+    ...(image.registry === "docker.io"?{
       authBase: "https://auth.docker.io",
       authService: "registry.docker.io",
     }:{})
   };
 }
 
-export async function createSHA256(stream: streamReadable|fsReadStream|streamDuplex|Buffer) {
+export async function createSHA256(stream: streamReadable|fsReadStream|streamDuplex|Buffer, streamWait: Promise<void> = new Promise<void>(done => Buffer.isBuffer(stream) ? done() : stream.once("close", done))) {
   let hash = crypto.createHash("sha256");
   if (Buffer.isBuffer(stream)) hash = hash.update(stream);
-  else {
-    stream.on("data", data => hash = hash.update(data));
-    await new Promise(done => stream.once("end", done));
-  }
+  else stream.on("data", data => hash = hash.update(data));
+  if (streamWait) await streamWait;
   return hash.digest("hex");
 }

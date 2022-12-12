@@ -1,11 +1,11 @@
-import * as httpRequestLarge from "../large";
-import * as dockerUtils from "./utils";
-import * as Manifests from "./manifests";
+import * as httpRequestLarge from "../request/large.js";
+import * as dockerUtils from "./utils.js";
+import * as Manifests from "./manifests.js";
+import * as extendFs from "../extendsFs.js";
 import path from "node:path";
 import fs from "node:fs/promises";
 import os from "node:os";
 import debug from "debug";
-import { extendFs } from "../..";
 const blobsDebug = debug("coreutils:oci:blobs");
 
 export async function downloadBlob(repo: string | Manifests.manifestOptions, options?: Manifests.optionsManifests & {storage?: string}) {

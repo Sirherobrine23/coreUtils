@@ -1,5 +1,5 @@
-import { requestOptions, pipeFetch } from "./simples";
-import { exists } from "../extendsFs";
+import { requestOptions, pipeFetch } from "./simples.js";
+import { exists } from "../extendsFs.js";
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";

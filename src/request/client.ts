@@ -1,4 +1,4 @@
-import { getJSON } from "./simples";
+import { getJSON } from "./simples.js";
 
 export type testIp<protocolType extends "ipv4"|"ipv6" = "ipv4"> = {
   ip: string,

@@ -1,4 +1,4 @@
-import * as OCI from "./index";
+import * as OCI from "./index.js";
 const repoOptions: OCI.Manifest.optionsManifests = {
   arch: "x64",
   platform: "linux"

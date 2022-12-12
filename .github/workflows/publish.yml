@@ -4,7 +4,7 @@ on:
     types:
       - prereleased
       - released
-      
+
 permissions:
   pull-requests: write
   issues: write
@@ -36,19 +36,13 @@ jobs:
     - name: Edit version
       shell: node {0}
       run: |
-        const fs = require("fs");
-        const path = require("path");
+        import fs = from "fs";
+        import path from "path";
         const packagePath = path.join(process.cwd(), "package.json");
         const package = JSON.parse(fs.readFileSync(packagePath, "utf8"));
         package.version = "${{ github.ref }}";
-        package.version = package.version.replace(/[A-Za-z_\/]+/, "");
+        package.version = package.version.replace(/[A-Za-z_\/]+\//, "");
         fs.writeFileSync(packagePath, JSON.stringify(package, null, 2));
-
-    # Add version to environment variables
-    - name: Add version to environment variables
-      run: |
-        cat package.json | jq -r '.version' > /tmp/version.txt
-        echo "PACKAGE_VERSION=$(cat /tmp/version.txt)" >> $GITHUB_ENV
 
     # Install depencides and build
     - run: npm ci
@@ -62,14 +56,19 @@ jobs:
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPMTOKEN }}
 
+    # Add version to environment variables
+    - name: show diff and add version to environment variables
+      run: |
+        git diff | tee
+        cat package.json | jq -r '.version' > /tmp/version.txt
+        echo "PACKAGE_VERSION=$(cat /tmp/version.txt)" >> $GITHUB_ENV
+
     # Create pull request to update version in main branch
     - uses: peter-evans/create-pull-request@v4
       name: Create Pull Request
       continue-on-error: true
       with:
         commit-message: Update version v${{ env.PACKAGE_VERSION }}
-        delete-branch: true
-        assignees: SirHerobrine23
         branch: update-version
         title: Update package version v${{ env.PACKAGE_VERSION }}
-        body: Auto update package version, created with GitHub Actions
+        body: Auto update package version to v${{ env.PACKAGE_VERSION }}, created with GitHub Actions

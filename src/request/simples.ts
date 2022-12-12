@@ -1,4 +1,4 @@
-import type { Method, Request, RequestError } from "got";
+import gotStands, { Method, Request, RequestError } from "got";
 import { JSDOM } from "jsdom";
 import * as fs from "node:fs";
 import * as stream from "node:stream";
@@ -7,22 +7,15 @@ const requestsDebug = debug("coreutils:request");
 const responseDebug = debug("coreutils:request:response");
 const pipeDebug = debug("coreutils:request:pipe");
 const bufferDebug = debug("coreutils:request:buffer");
-
-async function getImport<T>(moduleName: string): Promise<T> {return eval(`import("${moduleName}")`);}
-let got: Awaited<ReturnType<typeof gotCjs>>;
-/** import got from ESM to CJS with `import()` function */
-export async function gotCjs(): Promise<(typeof import("got"))["default"]> {
-  if (!got) got = (await getImport<typeof import("got")>("got")).default.extend({
-    enableUnixSockets: true,
-    http2: true,
-    headers: {
-      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
-      "Accept": "*/*"
-    }
-  });
-  return got;
-}
+const got = gotStands.extend({
+  enableUnixSockets: true,
+  http2: true,
+  headers: {
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
+    "Accept": "*/*"
+  }
+});
 
 export class responseError {
   public code: string;
@@ -94,7 +87,7 @@ export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStre
     delete options.body;
   }
   pipeDebug("Fetching data with options: %O", {...options, ...request, stream: "replace to show"});
-  const gotStream = (await gotCjs()).stream(urlRequest, {
+  const gotStream = got.stream(urlRequest, {
     isStream: true,
     headers: options.headers||{},
     method,
@@ -151,7 +144,7 @@ export async function bufferFetch(options: string|requestOptions) {
   }
 
   requestsDebug("Fetching data with options: %O", {...options, ...request});
-  return (await gotCjs())(urlRequest, {
+  return got(urlRequest, {
     responseType: "buffer",
     headers: options.headers||{},
     method,

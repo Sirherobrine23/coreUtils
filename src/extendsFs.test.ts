@@ -1,4 +1,7 @@
-import * as extendsFs from "./extendsFs";
+import * as extendsFs from "./extendsFs.js";
+import * as url from 'url';
+const __filename = url.fileURLToPath(import.meta.url);
+const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 
 describe("Extends FS module", function() {
   this.timeout(Infinity);

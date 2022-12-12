@@ -1,4 +1,4 @@
-import * as github from "./github";
+import * as github from "./github.js";
 
 describe("Github", function(){
   this.timeout(Infinity);

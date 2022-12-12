@@ -1,8 +1,8 @@
 import type { ObjectEncodingOptions } from "node:fs";
 import * as child_process from "node:child_process";
+import * as extendFs from "./extendsFs.js";
 import debug from "debug";
 import path from "node:path";
-import { extendFs } from ".";
 const childDebug = debug("coreutils:childprocess");
 
 export type childProcessPromise = {

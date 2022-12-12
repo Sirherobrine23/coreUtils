@@ -1,5 +1,5 @@
-import * as httpRequest from "../simples";
-import * as dockerUtils from "./utils";
+import * as httpRequest from "../request/simples.js";
+import * as dockerUtils from "./utils.js";
 import debug from "debug";
 const manifestDebug = debug("coreutils:oci:manifest");
 

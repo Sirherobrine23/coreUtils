@@ -1,6 +1,6 @@
 import { createReadStream, ReadStream as fsReadStream } from "node:fs";
 import { getOctokit } from "@actions/github";
-import { getJSON } from "./simples";
+import { getJSON } from "./simples.js";
 import stream from "node:stream";
 import fs from "node:fs/promises";
 import debug from "debug";

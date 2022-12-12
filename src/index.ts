@@ -1,17 +1,20 @@
-export * as customChildProcess from "./childPromisses";
-export * as extendFs from "./extendsFs";
-export * as Docker from "./request/ociManifest/index";
+import * as childPromisses from "./childPromisses.js";
+import * as extendFs from "./extendsFs.js";
+import * as DockerRegistry from "./DockerRegistry/index.js";
 
 // Imports http
-import * as httpRequest from "./request/simples";
-import * as httpRequestLarge from "./request/large";
-import * as httpRequestGithub from "./request/github";
-import * as httpRequestClient from "./request/client";
+import * as httpRequest from "./request/simples.js";
+import * as httpRequestLarge from "./request/large.js";
+import * as httpRequestGithub from "./request/github.js";
+import * as httpRequestClient from "./request/client.js";
 
-export {httpRequest, httpRequestClient, httpRequestLarge, httpRequestGithub};
-export const requests = {
-  client: httpRequestClient,
-  github: httpRequestGithub,
-  ...httpRequest,
-  ...httpRequestLarge,
-}
+export default {httpRequest, httpRequestClient, httpRequestLarge, httpRequestGithub, childPromisses, extendFs, DockerRegistry};
+export {
+  httpRequest,
+  httpRequestClient,
+  httpRequestLarge,
+  httpRequestGithub,
+  childPromisses,
+  extendFs,
+  DockerRegistry
+};

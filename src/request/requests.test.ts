@@ -1,6 +1,6 @@
-import * as httpRequest from "./simples";
-import * as httpRequestLarge from "./large";
-import * as httpRequestClient from "./client";
+import * as httpRequest from "./simples.js";
+import * as httpRequestLarge from "./large.js";
+import * as httpRequestClient from "./client.js";
 
 const simplesRequest = "https://sirherobrine23.org", simplesJson = "https://httpbin.org/anything",
   largeRequestZip = "https://github.com/The-Bds-Maneger/coreUtils/archive/refs/heads/main.zip",
