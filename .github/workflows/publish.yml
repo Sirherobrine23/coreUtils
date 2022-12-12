@@ -36,8 +36,8 @@ jobs:
     - name: Edit version
       shell: node {0}
       run: |
-        import fs = from "fs";
-        import path from "path";
+        const fs = require("fs");
+        const path = require("path");
         const packagePath = path.join(process.cwd(), "package.json");
         const package = JSON.parse(fs.readFileSync(packagePath, "utf8"));
         package.version = "${{ github.ref }}";
