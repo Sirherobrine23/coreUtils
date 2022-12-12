@@ -41,7 +41,7 @@ jobs:
         const packagePath = path.join(process.cwd(), "package.json");
         const package = JSON.parse(fs.readFileSync(packagePath, "utf8"));
         package.version = "${{ github.ref }}";
-        package.version = package.version.replace(/[A-Za-z_\/]+\//, "");
+        package.version = package.version.replace(/[A-Za-z_\/]+\/[a-zA-Z]+/, "");
         fs.writeFileSync(packagePath, JSON.stringify(package, null, 2));
 
     # Install depencides and build
