@@ -1,9 +1,6 @@
+import { manifestOptions } from "./manifests.js";
 import * as httpRequest from "../request/simples.js";
 import utils from "node:util";
-import crypto from "node:crypto";
-import { Readable as streamReadable, Duplex as streamDuplex } from "node:stream";
-import { ReadStream as fsReadStream } from "node:fs";
-import { manifestOptions } from "./manifests.js";
 
 export type registryInfo = {
   url: string,
@@ -82,23 +79,6 @@ export async function mountEndpoints(registryURL: string, options: {owner: strin
   throw new Error("version registry not compatible!");
 }
 
-export type requestToken = {
-  token: string,
-  access_token?: string,
-  expires_in?: number,
-  issued_at?: string
-}
-
-export async function getToken(options: manifestOptions) {
-  const request: httpRequest.requestOptions = {url: (options.authBase||options.registryBase)+"/token", query: {}};
-  if (!/http[s]:\/\//.test(request.url)) request.url = (await registryUrlInfo(options.registryBase)).url+"/token";
-  if (typeof options.authService === "string") request.query.service = options.authService;
-  request.query.scope = `repository:${options.owner}/${options.repository}:pull`;
-  const data = await httpRequest.getJSON<requestToken>(request);
-  return data.token;
-}
-
-
 const dockerImageRegex = /^(([a-z0-9\._\-]+(:([0-9]+))?)\/)?(([a-z0-9\._\-]+)\/)?([a-z0-9\._\-\/:]+)(@(sha256:\S+|\S+|))?$/;
 const tagImage = /:([\w\S]+)$/;
 
@@ -135,6 +115,7 @@ export function parseImageURI(image: string): ImageObject {
   };
 }
 
+const dockerRegistry = /^([a-z0-9\-\.]+\.)?docker.io$/;
 export function toManifestOptions(image: string|ImageObject): manifestOptions & {image: ImageObject} {
   if (typeof image === "string") image = parseImageURI(image);
   let tagDigest = image.tag;
@@ -148,17 +129,25 @@ export function toManifestOptions(image: string|ImageObject): manifestOptions & 
     owner: image.owner,
     repository: image.imageName,
     tagDigest,
-    ...(image.registry === "docker.io"?{
+    ...(dockerRegistry.test(image.registry)?{
       authBase: "https://auth.docker.io",
       authService: "registry.docker.io",
     }:{})
   };
 }
 
-export async function createSHA256(stream: streamReadable|fsReadStream|streamDuplex|Buffer, streamWait: Promise<void> = new Promise<void>(done => Buffer.isBuffer(stream) ? done() : stream.once("close", done))) {
-  let hash = crypto.createHash("sha256");
-  if (Buffer.isBuffer(stream)) hash = hash.update(stream);
-  else stream.on("data", data => hash = hash.update(data));
-  if (streamWait) await streamWait;
-  return hash.digest("hex");
+export type requestToken = {
+  token: string,
+  access_token?: string,
+  expires_in?: number,
+  issued_at?: string
+}
+
+export async function getToken(options: manifestOptions) {
+  const request: httpRequest.requestOptions = {url: (options.authBase||options.registryBase)+"/token", query: {}};
+  if (!/http[s]:\/\//.test(request.url)) request.url = (await registryUrlInfo(options.registryBase)).url+"/token";
+  if (typeof options.authService === "string") request.query.service = options.authService;
+  request.query.scope = `repository:${options.owner}/${options.repository}:pull`;
+  const data = await httpRequest.getJSON<requestToken>(request);
+  return data.token;
 }

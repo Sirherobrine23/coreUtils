@@ -53,9 +53,11 @@ export type requestOptions = {
   body?: any,
 };
 
+export async function pipeFetch(options: string|requestOptions): Promise<Request>;
 export async function pipeFetch(options: requestOptions & {waitFinish?: false}): Promise<Request>;
 export async function pipeFetch(options: requestOptions & {stream: fs.WriteStream|stream.Writable, waitFinish?: true}): Promise<void>;
 export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStream|stream.Writable, waitFinish?: boolean}): Promise<void|Request> {
+  if (typeof options === "string") options = {url: options};
   if (!(options?.url||options?.socket)) throw new Error("Host blank")
   let urlRequest = (typeof options.url === "string")?options.url:`http://unix:${options.socket.socketPath}:${options.socket.path||"/"}`;
   if (options.query) {

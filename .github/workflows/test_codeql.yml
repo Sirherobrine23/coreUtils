@@ -73,4 +73,5 @@ jobs:
     - name: Test
       run: npm run test
       env:
+        DEBUG_DEPTH: "1000"
         DEBUG: "coreutils:*"

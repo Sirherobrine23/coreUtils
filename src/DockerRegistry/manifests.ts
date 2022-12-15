@@ -122,7 +122,6 @@ export type blobInfo = {
 };
 
 export type optionsManifests = {platform?: NodeJS.Platform, arch?: NodeJS.Architecture};
-export default Manifest;
 export async function Manifest(repo: string|manifestOptions, options: optionsManifests = {platform: process.platform, arch: process.arch}) {
   if (typeof repo === "string") {
     manifestDebug("Convert %s to repo object", repo);
