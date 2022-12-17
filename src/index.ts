@@ -6,15 +6,16 @@ import * as httpRequestLarge from "./request/large.js";
 import * as httpRequestGithub from "./request/github.js";
 import * as httpRequestClient from "./request/client.js";
 import * as DockerRegistry from "./DockerRegistry/index.js";
+
 // Export
 export default {
+  DockerRegistry: DockerRegistry.default,
   httpRequest,
   httpRequestClient,
   httpRequestLarge,
   httpRequestGithub,
   childPromisses,
   extendFs,
-  DockerRegistry,
   extendsCrypto
 };
 
