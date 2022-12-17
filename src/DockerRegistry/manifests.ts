@@ -131,11 +131,12 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
   const manifestHeaders = {
     accept: [
       "application/vnd.oci.image.manifest.v1+json",
-      "application/vnd.docker.distribution.manifest.v2+json",
-      "application/vnd.docker.distribution.manifest.list.v2+json",
+      "application/vnd.oci.image.manifest.v2+json",
       "application/vnd.oci.image.index.v1+json",
+      "application/vnd.docker.distribution.manifest.list.v2+json",
+      "application/vnd.docker.distribution.manifest.v2+json",
       "application/vnd.docker.distribution.manifest.v1+prettyjws",
-      "application/json"
+      "application/json",
     ]
   };
 
@@ -205,7 +206,6 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
       if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.v2+json") {
         manifestDebug("Docker layer manifest");
         const manifestLayers: dockerManifestLayer = manifest;
-        if (!manifestLayers.layers.some(la => la.digest === manifestLayers.config.digest)) manifestLayers.layers.push({...manifestLayers.config, mediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip"});
         return {
           token,
           ...manifestLayers,
@@ -213,7 +213,6 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
       } else if (manifest?.config?.mediaType === "application/vnd.oci.image.config.v1+json") {
         manifestDebug("OCI layer manifest");
         const manifestLayers: ociManifestLayer = manifest;
-        if (!manifestLayers.layers.some(la => la.digest === manifestLayers.config.digest)) manifestLayers.layers.push({...manifestLayers.config, mediaType: "application/vnd.oci.image.layer.v1.tar+gzip"});
         return {
           token,
           ...manifestLayers,
