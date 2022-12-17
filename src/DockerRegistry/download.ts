@@ -8,7 +8,7 @@ import os from "node:os";
 import debug from "debug";
 const blobsDebug = debug("coreutils:oci:blobs");
 
-export async function downloadBlob(repo: string | Manifests.manifestOptions, options?: Manifests.optionsManifests & {storage?: string}) {
+export async function downloadBlob(repo: string | Manifests.manifestOptions, options?: Manifests.platfomTarget & {storage?: string}) {
   const repoControl = await Manifests.Manifest(repo, options);
   const blob = await repoControl.imageManifest();
   const token = await dockerUtils.getToken(repoControl.repoConfig);

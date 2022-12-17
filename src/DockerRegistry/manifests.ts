@@ -1,9 +1,10 @@
 import * as httpRequest from "../request/simples.js";
 import * as dockerUtils from "./utils.js";
 import debug from "debug";
+import { Readable } from "node:stream";
 const manifestDebug = debug("coreutils:oci:manifest");
 
-export const ARCH_GO_NODE: {[arch in NodeJS.Architecture]?: string} = {
+export const ARCH_GO_NODE: {[arch in NodeJS.Architecture]?: string} = Object.freeze({
   x64: "amd64",
   arm64: "arm64",
   arm: "arm",
@@ -12,9 +13,9 @@ export const ARCH_GO_NODE: {[arch in NodeJS.Architecture]?: string} = {
   s390: "s390",
   s390x: "s390x",
   mips: "mips"
-};
+});
 
-export const OS_GO_NODE: {[platform in NodeJS.Platform]?: string} = {
+export const OS_GO_NODE: {[platform in NodeJS.Platform]?: string} = Object.freeze({
   win32: "windows",
   sunos: "solaris",
   linux: "linux",
@@ -24,7 +25,7 @@ export const OS_GO_NODE: {[platform in NodeJS.Platform]?: string} = {
   freebsd: "freebsd",
   netbsd: "netbsd",
   openbsd: "openbsd"
-};
+});
 
 export type manifestOptions = {
   authBase?: string,
@@ -121,8 +122,8 @@ export type blobInfo = {
   }
 };
 
-export type optionsManifests = {platform?: NodeJS.Platform, arch?: NodeJS.Architecture};
-export async function Manifest(repo: string|manifestOptions, options: optionsManifests = {platform: process.platform, arch: process.arch}) {
+export type platfomTarget = {platform?: NodeJS.Platform, arch?: NodeJS.Architecture};
+export async function Manifest(repo: string|manifestOptions, platform_target: platfomTarget = {platform: process.platform, arch: process.arch}) {
   if (typeof repo === "string") {
     manifestDebug("Convert %s to repo object", repo);
     repo = dockerUtils.toManifestOptions(repo);
@@ -152,6 +153,29 @@ export async function Manifest(repo: string|manifestOptions, options: optionsMan
     return response.tags;
   }
 
+  async function manifestMultiArch(reference?: string) {
+    if (!reference) reference = (await getTags()).at(-1);
+    const requestEndpoint = endpointsControl.manifest(reference);
+    const token = await dockerUtils.getToken(repoConfig);
+    const manifest = await httpRequest.getJSON({
+      url: requestEndpoint,
+      headers: {
+        ...manifestHeaders,
+        Authorization: `Bearer ${token}`
+      }
+    });
+    if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.list.v2+json") {
+      manifestDebug("Switch to Docker manifest with multi arch, Manifest: %O", manifest);
+      const platformsManifest: dockerManifestMultiArchPlatform = manifest;
+      return platformsManifest;
+    } else if (manifest?.manifests?.some(layer => layer?.mediaType === "application/vnd.oci.image.manifest.v1+json")) {
+      manifestDebug("Switch to OCI manifest Multi Arch, Manifest: %O", manifest);
+      const ociManeifestPlatforms: ociManifestMultiArchPlatform = manifest;
+      return ociManeifestPlatforms;
+    }
+    throw new Error("Manifest not found");
+  }
+
   async function imageManifest(reference?: string): Promise<dockerManifestLayer|ociManifestLayer> {
     if (!reference) reference = (await getTags()).at(-1);
     const requestEndpoint = endpointsControl.manifest(reference);
@@ -166,13 +190,13 @@ export async function Manifest(repo: string|manifestOptions, options: optionsMan
     if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.list.v2+json") {
       manifestDebug("Switch to Docker manifest with multi arch, Manifest: %O", manifest);
       const platformsManifest: dockerManifestMultiArchPlatform = manifest;
-      const find = platformsManifest.manifests.find(target => target.platform.architecture === ARCH_GO_NODE[options?.arch||process.arch] && target.platform.os === OS_GO_NODE[options?.platform||process.platform]);
+      const find = platformsManifest.manifests.find(target => target.platform.architecture === ARCH_GO_NODE[platform_target?.arch||process.arch] && target.platform.os === OS_GO_NODE[platform_target?.platform||process.platform]);
       if (!find) throw new Error("Current platform not avaible")
       return imageManifest(find.digest);
     } else if (manifest?.manifests?.some(layer => layer?.mediaType === "application/vnd.oci.image.manifest.v1+json")) {
       manifestDebug("Switch to OCI manifest Multi Arch, Manifest: %O", manifest);
       const ociManeifestPlatforms: ociManifestMultiArchPlatform = manifest;
-      const find = ociManeifestPlatforms.manifests.find(target => target.platform.architecture === ARCH_GO_NODE[options?.arch||process.arch] && target.platform.os === OS_GO_NODE[options?.platform||process.platform]);
+      const find = ociManeifestPlatforms.manifests.find(target => target.platform.architecture === ARCH_GO_NODE[platform_target?.arch||process.arch] && target.platform.os === OS_GO_NODE[platform_target?.platform||process.platform]);
       if (!find) throw new Error("Current platform not avaible")
       return imageManifest(find.digest);
     } else if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.v2+json") {
@@ -200,10 +224,52 @@ export async function Manifest(repo: string|manifestOptions, options: optionsMan
     });
   }
 
+  async function layersStream(fn: (data: {layer: (dockerManifestLayer|ociManifestLayer)["layers"][number], breakloop: () => void, next: () => void, stream: Readable}) => void, reference?: string, lockNext = true) {
+    const manifest = await imageManifest(reference);
+    const token = await dockerUtils.getToken(repoConfig);
+    let breakLoop = false;
+    for (const layer of manifest.layers) {
+      if (breakLoop) break;
+      manifestDebug("Stream layer %s, media type %s", layer.digest, layer.mediaType);
+      if (!(([".tar", ".tar.gz", ".tar+gz", ".tar.gzip", ".tar+gzip"]).some(ends => layer.mediaType.endsWith(ends)))) {
+        manifestDebug("Skip layer %s", layer.digest);
+        continue;
+      }
+      await new Promise<void>((resolve, reject) => {
+        httpRequest.pipeFetch({
+          url: endpointsControl.blob.get_delete(layer.digest),
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }).then(stream => {
+          let areNext = false;
+          const next = () => {
+            manifestDebug("%s call to next layer", layer.digest);
+            if (areNext) return;
+            areNext = true;
+            resolve();
+          }
+          stream.once("error", reject);
+          if (lockNext) stream.once("end", next);
+          return fn({
+            layer,
+            breakloop: () => breakLoop = true,
+            next,
+            stream,
+          });
+        }).catch(reject);
+      });
+    }
+  }
+
   return {
-    repoConfig, endpointsControl,
+    repoConfig,
+    endpointsControl,
     imageManifest,
+    manifestMultiArch,
     blobsManifest,
     getTags,
+    layersStream,
   };
 }

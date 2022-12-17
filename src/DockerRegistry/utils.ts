@@ -143,11 +143,12 @@ export type requestToken = {
   issued_at?: string
 }
 
-export async function getToken(options: manifestOptions) {
+export async function getToken(options: manifestOptions & {action?: "pull"|"push"}) {
+  if (!(["pull", "push"]).includes(options.action)) options.action = "pull";
   const request: httpRequest.requestOptions = {url: (options.authBase||options.registryBase)+"/token", query: {}};
   if (!/http[s]:\/\//.test(request.url)) request.url = (await registryUrlInfo(options.registryBase)).url+"/token";
   if (typeof options.authService === "string") request.query.service = options.authService;
-  request.query.scope = `repository:${options.owner}/${options.repository}:pull`;
+  request.query.scope = `repository:${options.owner}/${options.repository}:${options.action}`;
   const data = await httpRequest.getJSON<requestToken>(request);
   return data.token;
 }

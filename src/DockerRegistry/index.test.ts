@@ -1,5 +1,5 @@
 import * as OCI from "./index.js";
-const repoOptions: OCI.Manifest.optionsManifests = {
+const repoOptions: OCI.Manifest.platfomTarget = {
   arch: "x64",
   platform: "linux"
 };
@@ -13,6 +13,13 @@ describe("Docker/OCI registry", function() {
       OCI.Manifest.Manifest("ubuntu", repoOptions).then(res => res.imageManifest()),
     ]);
     return data;
+  });
+  it("Stream layer", async () => {
+    const registry = await OCI.Manifest.Manifest("ghcr.io/sirherobrine23/nodeaptexample:latest", repoOptions);
+    return registry.layersStream((data) => {
+      data.stream.on("data", (chunk) => chunk.length);
+      // console.log(data.layer);
+    });
   });
   it("Image parse", () => {
     const imagesURi = [
