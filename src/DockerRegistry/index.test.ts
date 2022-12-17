@@ -8,6 +8,7 @@ describe("Docker/OCI registry", function() {
   this.timeout(Infinity);
   it("Get Manifest", async () => {
     const data = await Promise.all([
+      OCI.Manifest.Manifest("ghcr.io/sirherobrine23/nodeaptexample:latest", repoOptions).then(res => res.imageManifest()),
       OCI.Manifest.Manifest("ghcr.io/sirherobrine23/initjs:full", repoOptions).then(res => res.imageManifest()),
       OCI.Manifest.Manifest("debian:latest", repoOptions).then(res => res.imageManifest()),
       OCI.Manifest.Manifest("ubuntu", repoOptions).then(res => res.imageManifest()),
@@ -18,7 +19,7 @@ describe("Docker/OCI registry", function() {
     const registry = await OCI.Manifest.Manifest("ghcr.io/sirherobrine23/nodeaptexample:latest", repoOptions);
     return registry.layersStream((data) => {
       data.stream.on("data", (chunk) => chunk.length);
-      // console.log(data.layer);
+      data.next();
     });
   });
   it("Image parse", () => {

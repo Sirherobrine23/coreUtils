@@ -124,12 +124,9 @@ export type blobInfo = {
 
 export type platfomTarget = {platform?: NodeJS.Platform, arch?: NodeJS.Architecture};
 export default Manifest;
-export async function Manifest(repo: string|manifestOptions, platform_target: platfomTarget = {platform: process.platform, arch: process.arch}) {
-  if (typeof repo === "string") {
-    manifestDebug("Convert %s to repo object", repo);
-    repo = dockerUtils.toManifestOptions(repo);
-  }
-  const repoConfig: manifestOptions = repo;
+export async function Manifest(repo: string|dockerUtils.ImageObject, platform_target: platfomTarget = {platform: process.platform, arch: process.arch}) {
+  const repoObject = typeof repo === "string" ? dockerUtils.parseImageURI(repo) : repo;
+  const repoConfig = dockerUtils.toManifestOptions(repoObject);
   const endpointsControl = await dockerUtils.mountEndpoints(repoConfig.registryBase, {owner: repoConfig.owner, repo: repoConfig.repository});
   const manifestHeaders = {
     accept: [
@@ -208,11 +205,19 @@ export async function Manifest(repo: string|manifestOptions, platform_target: pl
       if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.v2+json") {
         manifestDebug("Docker layer manifest");
         const manifestLayers: dockerManifestLayer = manifest;
-        return {...manifestLayers, token};
+        if (!manifestLayers.layers.some(la => la.digest === manifestLayers.config.digest)) manifestLayers.layers.push({...manifestLayers.config, mediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip"});
+        return {
+          token,
+          ...manifestLayers,
+        };
       } else if (manifest?.config?.mediaType === "application/vnd.oci.image.config.v1+json") {
         manifestDebug("OCI layer manifest");
         const manifestLayers: ociManifestLayer = manifest;
-        return {...manifestLayers, token};
+        if (!manifestLayers.layers.some(la => la.digest === manifestLayers.config.digest)) manifestLayers.layers.push({...manifestLayers.config, mediaType: "application/vnd.oci.image.layer.v1.tar+gzip"});
+        return {
+          token,
+          ...manifestLayers,
+        };
       }
       manifestDebug("Unknow manifest: %O", manifest);
       throw new Error("Invalid manifest");
@@ -245,41 +250,45 @@ export async function Manifest(repo: string|manifestOptions, platform_target: pl
   async function layersStream(fn: (data: {layer: (dockerManifestLayer|ociManifestLayer)["layers"][number], skipNextLayer: () => void, breakloop: () => void, next: () => void, stream: Readable}) => void, reference?: string) {
     const manifest = await imageManifest(reference);
     const token = manifest.token ?? await dockerUtils.getToken(repoConfig);
-    let breakLoop = false;
-    let skipLayer = false;
-    const breakloop = () => {breakLoop = true}, skipNextLayer = () => {skipLayer = true};
-    for (const layerIndex in (manifest.layers ?? [])) {
-      const layer = manifest.layers[layerIndex];
-      if (breakLoop) break;
-      if (skipLayer) {
-        skipLayer = false;
-        continue;
-      }
-      manifestDebug("Stream layer %s, media type %s", layer.digest, layer.mediaType);
+    const layers = manifest.layers ?? [];
+    let layerIndex = 0;
+    while (layers.length > layerIndex) {
       await new Promise<void>((resolve, reject) => {
+        const layer = manifest.layers[layerIndex];
         return blobLayerStream(layer.digest, token).then((stream) => {
-          let areNext = false;
+          let lockNext = false;
           const next = () => {
+            if (lockNext) return manifestDebug("%s call to next layer, so blocked to %s", layer.digest, manifest.layers[layerIndex+2]?.digest||"No more layers");
+            lockNext = true;
             manifestDebug("%s call to next layer %s", layer.digest, manifest.layers[layerIndex+1]?.digest||"No more layers");
-            if (areNext) return;
-            areNext = true;
-            resolve();
+            return resolve();
           }
           stream.once("error", reject);
           stream.once("end", next);
           return fn({
             layer,
-            breakloop,
-            skipNextLayer,
+            breakloop: () => {
+              manifestDebug("%s call to break loop", layer.digest);
+              layerIndex = (layers.length + 1);
+              return resolve();
+            },
+            skipNextLayer: () => {
+              if (lockNext) return manifestDebug("%s call to skip next layer, so blocked to %s", layer.digest, manifest.layers[layerIndex+2]?.digest||"No more layers");
+              layerIndex++;
+              manifestDebug("%s call to skip next layer, %s", layer.digest, manifest.layers[layerIndex+1]?.digest||"No more layers");
+              return resolve();
+            },
             next,
             stream,
           });
         }).catch(reject);
       });
+      layerIndex++;
     }
   }
 
   return {
+    imageObject: repoObject,
     repoConfig,
     endpointsControl,
     imageManifest,
