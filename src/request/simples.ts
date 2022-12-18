@@ -64,7 +64,7 @@ export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStre
     const query: requestOptions["query"] = options.query;
     const queryMap = Object.keys(query).map(key => `${key}=${query[key]}`);
     if (queryMap.length > 0) {
-      if (/.*\?[\s\S\W]+$/.test(urlRequest)) urlRequest += "&"+queryMap.join("&");
+      if (([...((new URL(urlRequest)).searchParams)]).length > 0) urlRequest += "&"+queryMap.join("&");
       else urlRequest += "?"+queryMap.join("&");
     }
   }
@@ -121,7 +121,7 @@ export async function bufferFetch(options: string|requestOptions) {
     const query: requestOptions["query"] = options.query;
     const queryMap = Object.keys(query).map(key => `${key}=${query[key]}`);
     if (queryMap.length > 0) {
-      if (/.*\?[\s\S\W]+$/.test(urlRequest)) urlRequest += "&"+queryMap.join("&");
+      if (([...((new URL(urlRequest)).searchParams)]).length > 0) urlRequest += "&"+queryMap.join("&");
       else urlRequest += "?"+queryMap.join("&");
     }
   }
