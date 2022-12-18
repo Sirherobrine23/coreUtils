@@ -34,8 +34,8 @@ export async function createSHA256_MD5(stream: streamReadable|fsReadStream|strea
   if (Hash === "sha256"||Hash === "both") hashObject.sha256 = crypto.createHash("sha256");
   if (Hash === "md5"||Hash === "both") hashObject.md5 = crypto.createHash("md5");
 
-  if (Buffer.isBuffer(stream)) Object.keys(hashObject).forEach(() => hashObject[Hash] = hashObject[Hash].update(stream));
-  else stream.on("data", data => Object.keys(hashObject).forEach(() => hashObject[Hash] = hashObject[Hash].update(data)));
+  if (Buffer.isBuffer(stream)) Object.keys(hashObject).forEach(mh => hashObject[mh] = hashObject[mh].update(stream));
+  else stream.on("data", data => Object.keys(hashObject).forEach(mh => hashObject[mh] = hashObject[mh].update(data)));
 
   // Wait promise if exists
   if (streamWait) await streamWait;
