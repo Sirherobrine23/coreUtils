@@ -29,7 +29,6 @@ function get_new_file(chunk: Buffer) {
     else if (isNaN(group)) return false;
     else if (isNaN(mode)) return false;
     else if (isNaN(size)) return false;
-    console.log(startFrom, startAt);
     const data = {
       name,
       time,
