@@ -47,8 +47,8 @@ export function createPack() {
   };
 }
 
-export function get_new_file(chunk: Buffer) {
-  if (chunk.length < 60) return false;
+function get_new_file(chunk: Buffer) {
+  if (chunk.length < 60) return null;
   for (let i = 0; i < chunk.length+1;i++) {
     const lastByteHead = i+2;
     if (chunk.subarray(i, lastByteHead).toString() !== "`\n") continue;
@@ -60,12 +60,19 @@ export function get_new_file(chunk: Buffer) {
     const group = parseInt(head.subarray(34, 40).toString().trim(), 10);
     const mode = parseInt(head.subarray(40, 48).toString().trim(), 8);
     const size = parseInt(head.subarray(48, 58).toString().trim(), 10);
-    if (!name) return false;
-    else if (time.toString() === "Invalid Date") return false;
-    else if (isNaN(owner)) return false;
-    else if (isNaN(group)) return false;
-    else if (isNaN(mode)) return false;
-    else if (isNaN(size)) return false;
+    if (!name) return null;
+    else if (time.toString() === "Invalid Date") return null;
+    else if (isNaN(owner)) return null;
+    else if (isNaN(group)) return null;
+    else if (isNaN(mode)) return null;
+    else if (isNaN(size)) return null;
+    let fileBufferEnd: Buffer;
+    let nextBuffer = chunk.subarray(lastByteHead+1);
+    const backBuffer = chunk.subarray(0, fistCharByte);
+    if (nextBuffer.length > size) {
+      fileBufferEnd = nextBuffer.subarray(0, size);
+      nextBuffer = nextBuffer.subarray(size+1);
+    }
     const data = {
       fileInfo: {
         name,
@@ -75,103 +82,77 @@ export function get_new_file(chunk: Buffer) {
         mode,
         size
       },
-      buffersStart: {
-        lastByteHead,
-        fistCharByte,
+      buffers: {
+        backBuffer,
+        head,
+        nextBuffer,
+        fileBufferEnd
       }
     };
     return data;
   }
-  return false;
+  return null;
 }
 
+export type fileInfo = (ReturnType<typeof get_new_file>)["fileInfo"];
 
-export function createUnpack(fn?: (...arg: any[]) => void) {
-  const __writed = new Writable();
-  let __locked = false;
-  let entryStream: Readable;
-  let size = 0;
-  function check_new_file(chunk: Buffer) {
-    return !!(chunk.subarray(0, 60).toString().replace(/\s+\`(\n)?$/, "").trim().match(/^([\w\s\S]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)$/));
-  }
-  function _final(callback: (error?: Error) => void): void {
-    if (entryStream) {
-      entryStream.push(null);
-      entryStream = undefined;
-    }
-    return callback();
-  }
-  function _destroy(error: Error, callback: (error?: Error) => void): void {
-    if (entryStream) {
-      entryStream.push(null);
-      entryStream = undefined;
-    }
-    return callback(error);
-  }
-  async function __push(chunk: Buffer, callback?: (error?: Error | null) => void) {
-    if (0 < size) {
-      if (check_new_file(chunk.subarray(size))) {
-        // console.log("[Ar]: Nextfile");
-        const silpChuck = chunk.subarray(0, size);
-        chunk = chunk.subarray(size);
-        // console.log("[Ar]: Nextfile: %f", chunk.length);
-        entryStream.push(silpChuck, "binary");
-        entryStream.push(null);
-        entryStream = undefined;
-        size = 0;
-        return __writed._write(chunk, "binary", callback);
+/**
+ * extract ar file with stream
+ */
+export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
+  let initialHead = true;
+  let fileStream: Readable;
+  let oldBuffer: Buffer;
+  const internalStream = new Writable({
+    write(remoteChunk, encoding, callback) {
+      let chunk = Buffer.isBuffer(remoteChunk) ? remoteChunk : Buffer.from(remoteChunk, encoding);
+      if (oldBuffer) {
+        chunk = Buffer.concat([oldBuffer, chunk]);
+        oldBuffer = undefined;
       }
-    }
-    size -= chunk.length;
-    entryStream.push(chunk, "binary");
-    return callback();
-  }
-  let waitMore: Buffer;
-  __writed._write = (chunkRemote, encoding, callback) => {
-    if (!Buffer.isBuffer(chunkRemote)) chunkRemote = Buffer.from(chunkRemote, encoding);
-    let chunk = Buffer.from(chunkRemote);
-    if (__locked === false) {
-      // console.log("[Ar]: Fist chunk length: %f", chunk.length);
-      if (waitMore) {
-        chunk = Buffer.concat([waitMore, chunk]);
-        waitMore = undefined;
+      if (initialHead) {
+        if (chunk.toString().slice(0, 8) !== "!<arch>\n") return callback(new Error("Invalid ar file"));
+        initialHead = false;
+        chunk = chunk.subarray(8);
       }
-      if (chunk.length < 70) {
-        waitMore = chunk;
-        callback();
+      const info = get_new_file(chunk);
+      if (fileStream) {
+        if (info) {
+          fileStream.push(info.buffers.backBuffer);
+          fileStream.push(null);
+          fileStream = undefined;
+          fileStream = new Readable();
+          fileStream._read = (size) => size;
+          if (fn) fn(info.fileInfo, fileStream);
+          if (info.buffers.fileBufferEnd) {
+            fileStream.push(info.buffers.fileBufferEnd);
+            fileStream.push(null);
+            fileStream = undefined;
+            oldBuffer = info.buffers.nextBuffer;
+            return callback();
+          }
+          chunk = info.buffers.nextBuffer;
+        }
+        fileStream.push(chunk);
+      } else {
+        if (info) {
+          fileStream = new Readable();
+          fileStream._read = (size) => size;
+          if (fn) fn(info.fileInfo, fileStream);
+          fileStream.push(info.buffers.backBuffer);
+          if (info.buffers.fileBufferEnd) {
+            fileStream.push(info.buffers.fileBufferEnd);
+            fileStream.push(null);
+            fileStream = undefined;
+            return this.write(info.buffers.nextBuffer, encoding, callback);
+          }
+          oldBuffer = info.buffers.nextBuffer;
+        }
+        oldBuffer = chunk;
       }
-      if (!chunk.subarray(0, 8).toString().trim().startsWith("!<arch>")) {
-        this.destroy();
-        return callback(new Error("Not an ar file"));
-      }
-      __locked = true;
-      chunk = chunk.subarray(8);
+      console.log(info);
+      return callback();
     }
-    if (entryStream) return __push(chunk, callback);
-    const info = chunk.subarray(0, 60).toString().replace(/\s+\`(\n)?$/, "").trim();
-    chunk = chunk.subarray(60);
-    // debian-binary   1668505722  0     0     100644  4
-    const dataMathc = info.match(/^([\w\s\S]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)$/);
-    if (!dataMathc) {
-      size = chunk.length;
-      return __push(chunk, callback);
-    }
-    const [, name, time, owner, group, mode, sizeM] = dataMathc;
-    const data = {
-      name: name.trim(),
-      time: new Date(parseInt(time)*1000),
-      owner: parseInt(owner),
-      group: parseInt(group),
-      mode: parseInt(mode),
-      size: parseInt(sizeM)
-    };
-    size = data.size;
-    entryStream = new Readable({read() {}});
-    fn(data, entryStream);
-    return __push(chunk, callback);
-    // process.exit(1);
-  }
-  __writed._final = (callback) => {return _final.call(this, callback);};
-  __writed._destroy = (error, callback) => {return _destroy.call(this, error, callback);};
-  return __writed;
+  });
+  return internalStream;
 }
