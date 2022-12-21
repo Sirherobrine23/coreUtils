@@ -73,17 +73,51 @@ export type fileInfo = {
  * file content
  */
 export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
-  console.clear();
   let initialHead = true;
   let oldBuffer: Buffer;
   let fileStream: Readable;
   let fileStreamSize: number;
+  let filename: string;
   const internalStream = new Writable({
+    defaultEncoding: "binary",
+    objectMode: false,
+    autoDestroy: true,
+    decodeStrings: true,
+    emitClose: true,
+    highWaterMark: 1024,
+    final(callback) {
+      if (fileStream) {
+        if (oldBuffer?.length > 0) {
+          debugArExtract("push rest of buffer to file stream");
+          // if (fileStreamSize !== oldBuffer.length) {
+          //   debugArExtract("rest of buffer is bigger than file size");
+          //   return callback(new Error("Error in extract file"));
+          // }
+          const restFile = oldBuffer.subarray(0, fileStreamSize);
+          fileStream.push(restFile);
+          fileStreamSize -= restFile.length;
+          oldBuffer = oldBuffer.subarray(restFile.length),
+          console.log([
+            oldBuffer.toString("ascii")
+          ]);
+        }
+        fileStream.push(null);
+        oldBuffer = undefined;
+        console.log("Stream end");
+      }
+      callback();
+    },
+    destroy(error, callback) {
+      if (fileStream) fileStream.destroy(error);
+      callback(error);
+    },
     write(remoteChunk, encoding, callback) {
       let chunk = Buffer.isBuffer(remoteChunk) ? remoteChunk : Buffer.from(remoteChunk, encoding);
       if (oldBuffer) {
-        chunk = Buffer.concat([oldBuffer, chunk]);
-        debugArExtract("concat old buffer with length %f and new buffer with length %f", oldBuffer.length, chunk.length);
+        if (oldBuffer.length > 0) {
+          chunk = Buffer.concat([oldBuffer, chunk]);
+          debugArExtract("concat old buffer with length %f and new buffer with length %f", oldBuffer.length, chunk.length);
+        }
         oldBuffer = undefined;
       }
       // file signature
@@ -102,28 +136,28 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
         initialHead = false;
         chunk = chunk.subarray(8);
       }
-      const fileSizeDiff = fileStreamSize-chunk.length;
-      debugArExtract("chunk length %f, required %f, diff %f", chunk.length, fileStreamSize, fileSizeDiff);
-      if (!isNaN(fileSizeDiff)) {
-        if (fileStream) {
-          // if chunk is bigger than file size send rest of chunk to file stream
-          if (fileSizeDiff > 0) {
-            debugArExtract("send to file stream %f bytes", fileStreamSize);
-            fileStreamSize -= chunk.length;
-            fileStream.push(chunk.subarray(0, fileStreamSize));
-            chunk = chunk.subarray(fileStreamSize);
+
+      if (fileStream) {
+        // if chunk is bigger than file size send rest of chunk to file stream
+        if (fileStreamSize > 0) {
+          if (fileStreamSize >= chunk.length) {
+            const fixedChunk = chunk.subarray(0, fileStreamSize);
+            fileStream.push(fixedChunk);
+            fileStreamSize -= fixedChunk.length;
+            chunk = chunk.subarray(fixedChunk.length);
+            if (chunk.length === 0) return callback();
           }
         }
       }
 
       // more buffer
       if (chunk.length > 70) {
-        for (let i = 0; i < chunk.length; i++) {
+        for (let i = 0; i < chunk.length-2; i++) {
           const lastByteHead = i+2;
           const fistCharByte = lastByteHead-60;
           // check if new file
           if (chunk.subarray(i, lastByteHead).toString("ascii") !== endHead.toString("ascii")) continue;
-          debugArExtract("new file found, testing header, start in %f end in the %f", fistCharByte, lastByteHead);
+          // debugArExtract("Detect new file head, testing header, start in %f end in the %f", fistCharByte, lastByteHead);
           const head = chunk.subarray(fistCharByte, lastByteHead);
           const name = head.subarray(0, 16).toString().trim();
           const time = new Date(parseInt(head.subarray(16, 28).toString().trim(), 10) * 1000);
@@ -131,58 +165,78 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
           const group = parseInt(head.subarray(34, 40).toString().trim(), 10);
           const mode = parseInt(head.subarray(40, 48).toString().trim(), 8);
           const size = parseInt(head.subarray(48, 58).toString().trim(), 10);
-          if ((!name)||(time.toString() === "Invalid Date")||(isNaN(owner))||(isNaN(group))||(isNaN(mode))||(isNaN(size))) continue;
+          if ((!name)||(time.toString() === "Invalid Date")||(isNaN(owner))||(isNaN(group))||(isNaN(mode))||(isNaN(size))) {
+            if (fileStream) {
+              if (fileStreamSize > 0) {
+                const oldBuffer = chunk.subarray(0, fileStreamSize);
+                fileStream.push(oldBuffer);
+                // fileStream.push(null);
+                // debugArExtract("Close old stream with data buffer size %f", oldBuffer.length);
+                // fileStream = undefined;
+                debugArExtract("Close stream %s with data buffer size %f", filename, oldBuffer.length, fileStreamSize);
+                fileStreamSize -= oldBuffer.length;
+                chunk = chunk.subarray(oldBuffer.length);
+                debugArExtract("New chunk size %f", oldBuffer.length);
+              }
+            }
+            continue;
+          }
           debugArExtract("file header valid, name '%s', time '%s', owner '%f', group '%f', mode '%f', size '%f'", name, time, owner, group, mode, size);
+          // send rest of chunk to file stream
           if (fileStream) {
-            debugArExtract("send rest of file to file stream to old stream");
-            const oldChunk = chunk.subarray(0, fistCharByte);
-            fileStream.push(oldChunk);
-            fileStream.push(null);
-            fileStream = undefined;
-            fileStreamSize = 0;
-            chunk = chunk.subarray(fistCharByte);
+            if (fileStreamSize > 0) {
+              const oldBuffer = chunk.subarray(0, fileStreamSize);
+              fileStream.push(oldBuffer);
+              fileStream.push(null);
+              debugArExtract("Close stream %s with data buffer size %f", filename, oldBuffer.length);
+              fileStream = undefined;
+              fileStreamSize = undefined;
+              chunk = chunk.subarray(oldBuffer.length);
+              debugArExtract("New chunk size %f", oldBuffer.length);
+            }
           }
 
           fileStream = new Readable({read() {}});
           if (fn) fn({name, time, owner, group, mode, size}, fileStream);
-          chunk = chunk.subarray(lastByteHead);
+          filename = name;
+          // Remove file header from chunk
           const fileSize = chunk.subarray(0, size);
+          // Remove file size from chunk
+          chunk = chunk.subarray(fileSize.length);
           fileStreamSize = size - fileSize.length;
           fileStream.push(fileSize);
 
+          // if all file is in chunk send null to file stream and remove file stream
           if (0 <= (fileSize.length - size)) {
             fileStream.push(null);
+            debugArExtract("Close stream %s with data buffer size %f", filename, fileSize.length);
             fileStream = undefined;
-            debugArExtract("end file stream, closing stream, send next file with length %f", chunk.length);
-            chunk = chunk.subarray(size);
-          }
-
-          if (chunk.length === 0) {
-            debugArExtract("end file, no stream required");
-            return callback();
+            fileStreamSize = undefined;
           }
         }
       }
 
       // if exist file stream and chunk is not empty
       if (fileStream) {
-        debugArExtract("send rest of file to file stream, no new file detect");
-        if (0 <= (fileStreamSize - chunk.length)) {
-          fileStreamSize -= chunk.length;
-          fileStream.push(chunk);
-        } else {
-          fileStream.push(chunk.subarray(0, fileStreamSize));
-          fileStream.push(null);
-          fileStream = undefined;
-          fileStreamSize = 0;
-          oldBuffer = chunk.subarray(fileStreamSize);
-          debugArExtract("end file, send next file with length %f", chunk.length);
+        // if chunk is bigger than file size send rest of chunk to file stream
+        if (fileStreamSize > 0) {
+          if (fileStreamSize >= chunk.length) {
+            const fixedChunk = chunk.subarray(0, fileStreamSize);
+            fileStream.push(fixedChunk);
+            fileStreamSize -= fixedChunk.length;
+            chunk = chunk.subarray(fixedChunk.length);
+            debugArExtract("send chunk to file stream, total %f, rest file to send %f, chunk avaible %f", fixedChunk.length, fileStreamSize, chunk.length);
+          }
         }
       }
 
-      if (chunk === undefined||chunk?.length <= 0) return callback();
-      oldBuffer = chunk;
-      debugArExtract("end file and function, send next file with length %f to next request", chunk?.length);
+      // if exists chunk and is not empty save to next request
+      if (chunk.length > 0) {
+        oldBuffer = chunk;
+        debugArExtract("end file and function, send next file with length %f to next request", chunk?.length);
+      }
+
+      // Get more buffer data
       return callback();
     }
   });
