@@ -131,25 +131,7 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
           const group = parseInt(head.subarray(34, 40).toString().trim(), 10);
           const mode = parseInt(head.subarray(40, 48).toString().trim(), 8);
           const size = parseInt(head.subarray(48, 58).toString().trim(), 10);
-          if ((!name)||(time.toString() === "Invalid Date")||(isNaN(owner))||(isNaN(group))||(isNaN(mode))||(isNaN(size))) {
-            if (fileStream) {
-              debugArExtract("invalid file header, send to file stream");
-              if (0 >= (fileStreamSize - chunk.length)) {
-                fileStreamSize -= chunk.length;
-                fileStream.push(chunk);
-              } else {
-                fileStream.push(chunk.subarray(0, fileStreamSize));
-                fileStream.push(null);
-                fileStream = undefined;
-                fileStreamSize = 0;
-                oldBuffer = chunk.subarray(fileStreamSize);
-                // console.log("end file, send next file with length %f", chunk.length);
-              }
-              return callback();
-            }
-            debugArExtract("invalid file header, recived '%o'", [head.toString("ascii")]);
-            return callback(new Error("cannot send file to stream"));
-          }
+          if ((!name)||(time.toString() === "Invalid Date")||(isNaN(owner))||(isNaN(group))||(isNaN(mode))||(isNaN(size))) continue;
           debugArExtract("file header valid, name '%s', time '%s', owner '%f', group '%f', mode '%f', size '%f'", name, time, owner, group, mode, size);
           if (fileStream) {
             debugArExtract("send rest of file to file stream to old stream");
