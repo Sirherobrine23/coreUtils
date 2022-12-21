@@ -4,6 +4,8 @@ node_modules/
 
 # test files
 *.deb
+*.tar.*
+*.tar
 
 # Typescript
 src/**/*.d.ts
