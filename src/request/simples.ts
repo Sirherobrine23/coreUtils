@@ -46,7 +46,7 @@ export type requestOptions = {
     socketPath: string,
     path?: string,
   },
-  query?: {[key: string]: string},
+  query?: {[key: string]: string|number|boolean},
   method?: Method,
   headers?: {[headerName: string]: string[]|string},
   /** accept: `string`, `Buffer`, `stream.Readable`, `fs.ReadStream`, and `JSON object` */

@@ -56,21 +56,10 @@ export type fileInfo = {
   size: number,
 };
 
+export default createUnpack;
 /**
  * extract ar file with stream
  *
- * File schema
- *
- * !<arch>\n
- * 60 bytes header to gnu ar
- *  name (16 bytes) (max 16 chars)
- *  unix timestamp (12 bytes)
- *  owner (6 bytes)
- *  group (6 bytes)
- *  mode (6 bytes)
- *  size (10 bytes)
- *  end header (2 bytes) `\n
- * file content
  */
 export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
   let initialHead = true;

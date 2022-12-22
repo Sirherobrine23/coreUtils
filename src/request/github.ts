@@ -60,38 +60,34 @@ export async function getReateLimit(token?: string) {
   return rate;
 }
 
-export async function GithubRelease(username: string, repo: string, releaseTag: string): Promise<githubRelease>;
-export async function GithubRelease(username: string, repo: string): Promise<githubRelease[]>;
-export async function GithubRelease(username: string): Promise<githubRelease[]>;
-export async function GithubRelease(username: string, repo?: string, releaseTag?: string): Promise<githubRelease|githubRelease[]> {
-  let fullRepo = username;
-  if (!username) throw new Error("Repository is required, example: GithubRelease(\"Username/repo\") or GithubRelease(\"Username\", \"repo\")");
-  if (repo) {
-    if (!/\//.test(fullRepo)) fullRepo += "/"+repo;
-  }
-  await getReateLimit();
-  if (releaseTag) {
-    if (releaseTag.toLowerCase() === "latest") return getJSON<githubRelease>({
-      url: `https://api.github.com/repos/${fullRepo}/releases/latest`,
-      headers: github_secret?{Authorization: `token ${github_secret}`}:{}
-    });
+export async function GithubRelease(options: {repository: string, owner: string, token?: string}): Promise<githubRelease[]>;
+export async function GithubRelease(options: {repository: string, owner: string, releaseTag?: string, token?: string, all?: boolean, pageLimit?: number}): Promise<githubRelease>;
+export async function GithubRelease(options: {repository: string, owner: string, releaseTag?: string, token?: string, all?: boolean, pageLimit?: number}): Promise<githubRelease|githubRelease[]> {
+  let urlRequest = `https://api.github.com/repos/${options.owner}/${options.repository}/releases`;
+  if (options.releaseTag) {
+    urlRequest += `/${options.releaseTag}`;
     return getJSON<githubRelease>({
-      url: `https://api.github.com/repos/${fullRepo}/releases/tags/${releaseTag}`,
-      headers: github_secret?{Authorization: `token ${github_secret}`}:{}
+      url: urlRequest,
+      headers: options.token?{Authorization: `token ${options.token}`}:{}
     });
   }
-  const allReleases: githubRelease[] = [];
-  let pageIndex = 0
+  const data: githubRelease[] = [];
+  let page = 1;
   while (true) {
-    const data = await getJSON<githubRelease[]>({
-      url: `https://api.github.com/repos/${fullRepo}/releases?per_page=100&page=${pageIndex++}`,
-      headers: github_secret?{Authorization: `token ${github_secret}`}:{}
+    const request = await getJSON<githubRelease[]>({
+      url: urlRequest,
+      query: {
+        per_page: "100",
+        page: (page++).toString(),
+      },
+      headers: options.token?{Authorization: `token ${options.token}`}:{}
     });
-    if (data.length === 0) break;
-    allReleases.push(...data);
-    if (data.length < 100) break;
+    data.push(...request);
+    if (!options.all) break;
+    if (!request.length) break;
+    if (options.pageLimit && page >= options.pageLimit) break;
   }
-  return allReleases;
+  return data;
 }
 
 export type releaseOptions = {
@@ -128,7 +124,6 @@ export async function createRelease(releaseOptions: releaseOptions) {
     name: releaseOptions?.tagName,
     ...releaseOptions
   };
-  await getReateLimit(releaseOptions.secret);
   const octokit = getOctokit(releaseOptions.secret);
   let release: githubRelease = (await octokit.rest.repos.listReleases({owner: releaseOptions.owner, repo: releaseOptions.repo})).data.find(release => release.tag_name === releaseOptions.tagName);
   if (!release) {
@@ -215,7 +210,6 @@ export async function githubTree(username: string, repo: string, tree: string = 
   const validate = /^[a-zA-Z0-9_\-]+$/;
   if (!validate.test(username)) throw new Error("Invalid username");
   if (!validate.test(repo)) throw new Error("Invalid repository name");
-  await getReateLimit();
   return getJSON<githubTree>({
     url: `https://api.github.com/repos/${username}/${repo}/git/trees/${tree}?recursive=true`,
     headers: github_secret?{Authorization: `token ${github_secret}`}:{}
