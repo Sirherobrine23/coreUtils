@@ -1,4 +1,5 @@
 import { Readable, Writable } from "node:stream";
+import { ReadStream } from "node:fs";
 import debug from "debug";
 const debugArExtract = debug("coreutils:ar:extract");
 const debugArPack = debug("coreutils:ar:pack");
@@ -152,7 +153,7 @@ export function createPack() {
   class pack extends Readable {
     #initialHead = true;
     #lockedStream = false;
-    async addFile(info: fileInfo, file: Buffer|Readable) {
+    async addFile(info: fileInfo, file: Buffer|Readable|ReadStream) {
       if (!this.readable) throw new Error("Stream is not readable");
       if (this.#lockedStream) throw new Error("Stream is locked");
       this.#lockedStream = true;
@@ -190,7 +191,8 @@ export function createPack() {
       if (file instanceof Readable) {
         await new Promise<void>((done, reject) => {
           file.on("error", reject);
-          file.on("end", () => done());
+          if (file instanceof ReadStream) file.on("close", () => done());
+          else file.on("end", () => done());
           file.on("data", (chunk) => {
             this.push(chunk);
             file.read();

@@ -1,11 +1,10 @@
-import { promises as fs, createWriteStream, createReadStream } from "node:fs";
+import { promises as fs, createReadStream } from "node:fs";
 import { Readable } from "node:stream";
 import { format } from "node:util";
 import { Decompressor } from "lzma-native";
 import { createHashAsync } from "./extendsCrypto.js";
 import * as Ar from "./ar.js";
 import path from "node:path";
-import os from "node:os";
 import extendFs from "./extendsFs.js";
 import tar from "tar";
 
@@ -88,7 +87,7 @@ export async function extractControl(fileStream: Readable, fnControl?: (control:
 }
 
 export async function packDeb(folderPath: string) {
-  throw new Error("Not implemented");
+  // throw new Error("Not implemented");
   if (!await extendFs.isDirectory(folderPath)) throw new Error(format("'%s' if not directory", folderPath));
   let debianFolder = path.resolve(folderPath, "DEBIAN");
   if (await extendFs.exists(path.resolve(folderPath, "debian"))) debianFolder = path.resolve(folderPath, "debian");
@@ -99,53 +98,15 @@ export async function packDeb(folderPath: string) {
   const pack = Ar.createPack();
   Promise.resolve().then(async () => {
     // control.tar.gz
-    const tmpControl = path.join(os.tmpdir(), (Math.random().toString())+(Date.now().toString())+"control.tar.gz");
-    const tmpData = path.join(os.tmpdir(), (Math.random().toString())+(Date.now().toString())+"data.tar.gz");
-    const controlWrite = createWriteStream(tmpControl, {
-      encoding: "binary",
-      autoClose: true,
-      emitClose: true
-    });
-    const dataWrite = createWriteStream(tmpData, {
-      encoding: "binary",
-      autoClose: true,
-      emitClose: true
-    });
-    if ((await fs.readFile(controlFile)).toString().endsWith("\n")) await fs.appendFile(controlFile, "\n");
+    const tmpControl = path.resolve(folderPath, "..", "control.tar.gz");
+    const tmpData = path.resolve(folderPath, "..", "data.tar.gz");
+    if (!((await fs.readFile(controlFile)).toString().endsWith("\n"))) await fs.appendFile(controlFile, "\n");
     const dataFiles = (await fs.readdir(folderPath)).filter(filePath => !(filePath === "DEBIAN"||filePath === "debian"));
     const debianFiles = (await fs.readdir(debianFolder)).filter(filePath => {
-      const data = [
-        "changelog",
-        "compat",
-        "control",
-        "copyright",
-        "docs",
-        "rules",
-        "source",
-        "watch",
-      ];
+      const data = ["changelog", "compat", "control", "copyright", "docs", "rules", "source", "watch"];
       return data.includes(filePath);
     });
 
-    tar.create({
-      gzip: true,
-      cwd: debianFolder,
-    }, debianFiles).pipe(controlWrite);
-
-    tar.create({
-      gzip: true,
-      cwd: folderPath,
-    }, dataFiles).pipe(dataWrite);
-    await Promise.all([
-      new Promise<void>((done, reject) => {
-        controlWrite.on("close", done);
-        controlWrite.on("error", reject);
-      }),
-      new Promise<void>((done, reject) => {
-        dataWrite.on("close", done);
-        dataWrite.on("error", reject);
-      })
-    ]);
     // debian-binary
     const debianBinary = Buffer.from("2.0\n", "utf8");
     await pack.addFile({
@@ -157,6 +118,11 @@ export async function packDeb(folderPath: string) {
       mode: 100644
     }, debianBinary);
 
+    await tar.create({
+      gzip: true,
+      cwd: debianFolder,
+      file: tmpControl
+    }, debianFiles)
     const controlStats = await fs.stat(controlFile);
     await pack.addFile({
       name: "control.tar.gz",
@@ -166,6 +132,12 @@ export async function packDeb(folderPath: string) {
       owner: 0,
       group: 0,
     }, createReadStream(tmpControl));
+
+    await tar.create({
+      gzip: true,
+      cwd: folderPath,
+      file: tmpData
+    }, dataFiles)
     const dataStats = await fs.stat(tmpData);
     await pack.addFile({
       name: "data.tar.gz",
@@ -175,6 +147,7 @@ export async function packDeb(folderPath: string) {
       owner: 0,
       group: 0,
     }, createReadStream(tmpData));
+
     await fs.rm(tmpControl);
     await fs.rm(tmpData);
     return pack.push(null);
