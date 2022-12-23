@@ -2,6 +2,8 @@ import { Stats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import debug from "debug";
+export type dirRecursive = {path: string, stat: Stats};
+export default {exists, isDirectory, isFile, readdirrecursive};
 const readdirDebug = debug("coreutils:extendsfs:readdir-recursive");
 
 export async function exists(filePath: string) {
@@ -24,7 +26,7 @@ export async function isFile(filePath: string) {
   }
 }
 
-export type dirRecursive = {path: string, stat: Stats};
+
 export async function readdirrecursive(filePath: string|string[]): Promise<string[]>;
 export async function readdirrecursive(filePath: string|string[], returnInfo: false): Promise<string[]>;
 export async function readdirrecursive(filePath: string|string[], returnInfo: true): Promise<dirRecursive[]>;
