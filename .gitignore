@@ -6,6 +6,7 @@ node_modules/
 *.deb
 *.tar.*
 *.tar
+*.a
 
 # Typescript
 src/**/*.d.ts

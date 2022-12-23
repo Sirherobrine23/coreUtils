@@ -90,7 +90,6 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
           const fistCharByte = lastByteHead-60;
           if (fistCharByte < 0) continue;
           const head = chunk.subarray(fistCharByte, lastByteHead);
-
           const name = head.subarray(0, 16).toString("ascii").trim();
           const time = new Date(parseInt(head.subarray(16, 28).toString("ascii").trim()) * 1000);
           const owner = parseInt(head.subarray(28, 34).toString("ascii").trim());
@@ -133,6 +132,9 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
             filename = undefined;
             if (chunk.length === 0) return callback();
           }
+
+          // Break loop to start again in new chunk
+          break;
         }
       }
 
