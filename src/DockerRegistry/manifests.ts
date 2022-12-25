@@ -5,26 +5,26 @@ import debug from "debug";
 const manifestDebug = debug("coreutils:oci");
 
 export const ARCH_GO_NODE: {[arch in NodeJS.Architecture]?: string} = Object.freeze({
-  x64: "amd64",
+  ppc64: "ppc64",
+  s390x: "s390x",
   arm64: "arm64",
+  s390: "s390",
+  mips: "mips",
+  x64: "amd64",
   arm: "arm",
   ppc: "ppc",
-  ppc64: "ppc64",
-  s390: "s390",
-  s390x: "s390x",
-  mips: "mips"
 });
 
 export const OS_GO_NODE: {[platform in NodeJS.Platform]?: string} = Object.freeze({
+  android: "android",
+  freebsd: "freebsd",
+  openbsd: "openbsd",
+  darwin: "darwin",
+  netbsd: "netbsd",
   win32: "windows",
   sunos: "solaris",
   linux: "linux",
-  darwin: "darwin",
-  android: "android",
   aix: "aix",
-  freebsd: "freebsd",
-  netbsd: "netbsd",
-  openbsd: "openbsd"
 });
 
 export type manifestOptions = {

@@ -45,7 +45,6 @@ export function createHash(target: "all"|hashTargets = "all", fn?: (Error: Error
   });
 }
 
-
 export async function createHashAsync(target: "all"|hashTargets = "all", stream: Readable): Promise<{[U in hashTargets]?: string}> {
   return new Promise((resolve, reject) => {
     stream.pipe(createHash(target, (err, hash) => {

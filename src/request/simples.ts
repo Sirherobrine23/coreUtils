@@ -22,10 +22,14 @@ export class responseError {
   public textError: string;
   public dataOriginal: any;
   public data: any;
+  public ip?: string;
+  public url?: string|URL;
   constructor(err: RequestError) {
     if (err?.code && err?.request) {
       this.code = err?.code;
       this.textError = err?.message;
+      this.ip = err?.request.ip;
+      this.url = err?.options?.url
       if (err?.response?.body) {
         this.dataOriginal = err.response.body;
         if (Buffer.isBuffer(err.response.body)) this.data = err.response.body.toString("utf8");
@@ -54,7 +58,6 @@ export type requestOptions = {
 };
 
 export async function pipeFetch(options: string|requestOptions): Promise<Request>;
-export async function pipeFetch(options: requestOptions & {waitFinish?: false}): Promise<Request>;
 export async function pipeFetch(options: requestOptions & {stream: fs.WriteStream|stream.Writable, waitFinish?: true}): Promise<void>;
 export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStream|stream.Writable, waitFinish?: boolean}): Promise<void|Request> {
   if (typeof options === "string") options = {url: options};

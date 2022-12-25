@@ -29,7 +29,7 @@ export async function downloadBlob(repo: string | dockerUtils.ImageObject, optio
   }
 
   return Promise.all(ids.map(async folder => {
-    const files = await extendFs.readdirrecursive(folder);
+    const files = await extendFs.readdir({folderPath: folder, withInfo: true});
     return {
       path: folder,
       files

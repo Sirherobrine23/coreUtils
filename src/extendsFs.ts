@@ -1,16 +1,15 @@
 import { Stats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import debug from "debug";
 export type dirRecursive = {path: string, stat: Stats};
-export default {exists, isDirectory, isFile, readdirrecursive};
-const readdirDebug = debug("coreutils:extendsfs:readdir-recursive");
+export default {exists, isDirectory, isFile, readdir};
 
 export async function exists(filePath: string) {
   return fs.access(path.resolve(filePath)).then(() => true).catch(() => false);
 }
 
 export async function isDirectory(filePath: string) {
+  if (!await exists(filePath)) return false;
   try {
     return (await fs.lstat(filePath)).isDirectory();
   } catch {
@@ -19,6 +18,7 @@ export async function isDirectory(filePath: string) {
 }
 
 export async function isFile(filePath: string) {
+  if (!await exists(filePath)) return false;
   try {
     return (await fs.lstat(filePath)).isFile();
   } catch {
@@ -26,27 +26,48 @@ export async function isFile(filePath: string) {
   }
 }
 
+export type fileInfo = {
+  path: string,
+  type: "file"|"directory"|"symbolicLink"|"unknown",
+  realPath: string,
+  relaType: "file"|"directory"|"symbolicLink"|"unknown",
+  size: number,
+};
 
-export async function readdirrecursive(filePath: string|string[]): Promise<string[]>;
-export async function readdirrecursive(filePath: string|string[], returnInfo: false): Promise<string[]>;
-export async function readdirrecursive(filePath: string|string[], returnInfo: true): Promise<dirRecursive[]>;
-export async function readdirrecursive(filePath: string|string[], returnInfo?: boolean): Promise<(dirRecursive|string)[]> {
-  if (typeof filePath === "object") return Promise.all(filePath.map(folder => readdirrecursive(folder, returnInfo as any))).then(returnArray => {
-    const files: ((typeof returnArray)[0]) = [];
-    for (const folderInfo of returnArray) files.push(...folderInfo);
-    return files;
-  });
-
-  if (!(await exists(filePath))) throw new Error("Folder not exists");
-  const resolvedPath = path.resolve(filePath);
-  if (!await isDirectory(resolvedPath)) throw new Error("path if not directory");
-  readdirDebug("initial read the \"%s\"", resolvedPath);
-  const dirfiles = (await fs.readdir(resolvedPath)).map(file => path.join(resolvedPath, file));
-  for (const folder of dirfiles) {
-    if (await isFile(folder)) continue;
-    readdirDebug("read the \"%s\"", folder);
-    await readdirrecursive(folder, false).then(files => dirfiles.push(...files as string[])).catch(err => err);
+export async function readdir(options: {folderPath: string|string[], filter?: (path: string, stat: Stats) => boolean|Promise<boolean>}): Promise<string[]>;
+export async function readdir(options: {folderPath: string|string[], filter?: (path: string, stat: Stats) => boolean|Promise<boolean>, withInfo: true, }): Promise<fileInfo[]>;
+export async function readdir(options: {folderPath: string|string[], filter?: (path: string, stat: Stats) => boolean|Promise<boolean>, withInfo?: boolean, }): Promise<(string|fileInfo)[]> {
+  if (typeof options.folderPath !== "string") return (await Promise.all(options.folderPath.map(folder => readdir({...options, folderPath: folder})))).flat();
+  const resolvedPath = path.resolve(options.folderPath);
+  if (!await exists(resolvedPath)) throw new Error("Folder not exists");
+  if (await isFile(resolvedPath)) {
+    if (!options.withInfo) return [resolvedPath];
+    const stat = await fs.stat(resolvedPath);
+    const relaStat = await fs.stat(await fs.realpath(resolvedPath));
+    return [
+      {
+        path: resolvedPath,
+        type: stat.isFile()?"file":stat.isDirectory()?"directory":stat.isSymbolicLink()?"symbolicLink":"unknown",
+        realPath: await fs.realpath(resolvedPath),
+        relaType: relaStat.isFile()?"file":relaStat.isDirectory()?"directory":relaStat.isSymbolicLink()?"symbolicLink":"unknown",
+        size: stat.size,
+      }
+    ];
   }
-  if (returnInfo) return Promise.all(dirfiles.map(async file => typeof file === "string"?fs.lstat(file).then(stat => ({ path: file, stat })):file));
-  return dirfiles;
+  const info = (await Promise.all((await fs.readdir(resolvedPath)).map(async folder => {
+    const folderPath = path.join(resolvedPath, folder);
+    if (options.filter && !(await options.filter(folderPath, await fs.stat(folderPath)))) return [];
+    if (isDirectory(folderPath)) return readdir({...options, folderPath: folderPath});
+    if (!options.withInfo) return folderPath;
+    const stat = await fs.stat(folderPath);
+    const relaStat = await fs.stat(await fs.realpath(folderPath));
+    return {
+      path: folderPath,
+      type: stat.isFile()?"file":stat.isDirectory()?"directory":stat.isSymbolicLink()?"symbolicLink":"unknown",
+      realPath: await fs.realpath(folderPath),
+      relaType: relaStat.isFile()?"file":relaStat.isDirectory()?"directory":relaStat.isSymbolicLink()?"symbolicLink":"unknown",
+      size: stat.size,
+    };
+  })));
+  return info.map(d => Array.isArray(d)?d.flat():d).flat() as any;
 }

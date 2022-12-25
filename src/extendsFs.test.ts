@@ -5,7 +5,8 @@ const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 
 describe("Extends FS module", function() {
   this.timeout(Infinity);
-  it("Read dir recursive", async () => await extendsFs.readdirrecursive(__dirname));
+  it("Read dir recursive", async () => extendsFs.readdir({folderPath: __dirname}));
+  it("Read dir recursive with file info", async () => extendsFs.readdir({folderPath: __dirname, withInfo: true}));
   it("Exists", async () => {
     if (await extendsFs.exists(__dirname)) return;
     throw new Error("Invalid return current exists folder");

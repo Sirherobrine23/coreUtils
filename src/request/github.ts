@@ -60,9 +60,9 @@ export async function getReateLimit(token?: string) {
   return rate;
 }
 
-export async function GithubRelease(options: {repository: string, owner: string, token?: string}): Promise<githubRelease[]>;
-export async function GithubRelease(options: {repository: string, owner: string, releaseTag?: string, token?: string, all?: boolean, pageLimit?: number}): Promise<githubRelease>;
-export async function GithubRelease(options: {repository: string, owner: string, releaseTag?: string, token?: string, all?: boolean, pageLimit?: number}): Promise<githubRelease|githubRelease[]> {
+export async function GithubRelease(options: {repository: string, owner: string, token?: string, all?: boolean, pageLimit?: number, peer?: number}): Promise<githubRelease[]>;
+export async function GithubRelease(options: {repository: string, owner: string, releaseTag?: string, token?: string}): Promise<githubRelease>;
+export async function GithubRelease(options: {repository: string, owner: string, releaseTag?: string, token?: string, all?: boolean, pageLimit?: number, peer?: number}): Promise<githubRelease|githubRelease[]> {
   let urlRequest = `https://api.github.com/repos/${options.owner}/${options.repository}/releases`;
   if (options.releaseTag) {
     urlRequest += `/${options.releaseTag}`;
@@ -73,18 +73,19 @@ export async function GithubRelease(options: {repository: string, owner: string,
   }
   const data: githubRelease[] = [];
   let page = 1;
+  if (options.pageLimit) options.pageLimit = Math.min(options.pageLimit, 100);
   while (true) {
     const request = await getJSON<githubRelease[]>({
       url: urlRequest,
       query: {
-        per_page: "100",
+        per_page: options?.peer || 100,
         page: (page++).toString(),
       },
       headers: options.token?{Authorization: `token ${options.token}`}:{}
     });
     data.push(...request);
     if (!options.all) break;
-    if (!request.length) break;
+    if (request.length === 0) break;
     if (options.pageLimit && page >= options.pageLimit) break;
   }
   return data;

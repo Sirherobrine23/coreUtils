@@ -32,7 +32,9 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
     emitClose: true,
     highWaterMark: 1024,
     final(callback) {
-      if (fileStream && oldBuffer) {if (!fileStream.destroyed||fileStream.readable) fileStream.push(oldBuffer.subarray(0, fileStreamSize));}
+      if (fileStream && oldBuffer) {
+        if (!fileStream.destroyed||fileStream.readable) fileStream.push(oldBuffer.subarray(0, fileStreamSize));
+      }
       oldBuffer = undefined;
       debugArExtract("end file stream");
       callback();
@@ -86,8 +88,8 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
 
       // more buffer
       if (chunk.length >= 60) {
-        for (let i = 0; i < chunk.length; i++) {
-          const lastByteHead = i;
+        for (let chunkByte = 0; chunkByte < chunk.length; chunkByte++) {
+          const lastByteHead = chunkByte;
           const fistCharByte = lastByteHead-60;
           if (fistCharByte < 0) continue;
           const head = chunk.subarray(fistCharByte, lastByteHead);
@@ -131,17 +133,16 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
             fileStream = undefined;
             fileStreamSize = undefined;
             filename = undefined;
-            if (chunk.length === 0) return callback();
           }
 
-          // Break loop to start again in new chunk
-          break;
+          // Restart loop to check if chunk has more headers
+          chunkByte = 0;
         }
       }
 
       // Get more buffer data
-      oldBuffer = chunk;
-      // debugArExtract("End funcion file size %f, current file %s", fileStreamSize, filename);
+      if (chunk.length > 0) oldBuffer = chunk;
+      debugArExtract("End funcion Chunk size %f", chunk.length);
       return callback();
     }
   });

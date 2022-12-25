@@ -67,8 +67,8 @@ export async function extractControl(fileStream: Readable, fnControl?: (control:
               return fileHash.then(hash => {
                 if (!hash) return reject(new Error("Hash not gerenate"));
                 control.MD5sum = hash.md5;
-                control.SHA256 = hash.sha256;
                 control.SHA1 = hash.sha1;
+                control.SHA256 = hash.sha256;
                 control.Size = fileSize;
                 if (fnControl) fnControl(control);
                 done(control);
