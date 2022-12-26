@@ -9,20 +9,26 @@ import extendFs from "./extendsFs.js";
 import tar from "tar";
 
 export type debianControl = {
-  Package: string
-  Version: string,
-  Maintainer: string,
+  Package: string,
   Architecture: string,
+  Version: string,
+  Priority: string,
+  Maintainer?: string,
+  Section?: string,
+  Origin?: string,
+  "Original-Maintainer"?: string,
+  Bugs?: string,
   "Installed-Size"?: number,
   Depends?: string,
-  Homepage?: string,
-  Section?: string,
-  Priority?: string,
+  Suggests?: string,
+  Filename?: string,
   Size?: number,
   MD5sum?: string,
-  SHA256?: string,
   SHA1?: string,
+  SHA256?: string,
+  Homepage?: string,
   Description?: string,
+  Task?: string
 };
 
 export function parseControlFile(control: string|Buffer) {
@@ -46,7 +52,10 @@ export function parseControlFile(control: string|Buffer) {
   Object.keys(controlObject).forEach((key) => {
     if (!isNaN(Number(controlObject[key]))) controlObject[key] = Number(controlObject[key]);
   });
-  return controlObject as debianControl;
+
+  const data = controlObject as debianControl;
+  data.Priority = data.Priority || "standard";
+  return data;
 }
 
 export async function extractControl(fileStream: Readable, fnControl?: (control: debianControl) => void) {
