@@ -60,12 +60,21 @@ export async function getReateLimit(token?: string) {
   return rate;
 }
 
-export async function GithubRelease(options: {repository: string, owner: string, token?: string, all?: boolean, pageLimit?: number, peer?: number}): Promise<githubRelease[]>;
-export async function GithubRelease(options: {repository: string, owner: string, releaseTag?: string, token?: string}): Promise<githubRelease>;
-export async function GithubRelease(options: {repository: string, owner: string, releaseTag?: string, token?: string, all?: boolean, pageLimit?: number, peer?: number}): Promise<githubRelease|githubRelease[]> {
+type githubReleaseBase = {
+  repository: string,
+  owner: string,
+  token?: string,
+  releaseTag?: string,
+  latest?: boolean,
+};
+
+export async function getRelease(options: githubReleaseBase & {all?: boolean, pageAt?: number, peer?: number}): Promise<githubRelease[]>;
+export async function getRelease(options: githubReleaseBase): Promise<githubRelease>;
+export async function getRelease(options: githubReleaseBase & {all?: boolean, pageAt?: number, peer?: number}): Promise<githubRelease|githubRelease[]> {
   let urlRequest = `https://api.github.com/repos/${options.owner}/${options.repository}/releases`;
-  if (options.releaseTag) {
-    urlRequest += `/${options.releaseTag}`;
+  if (options.releaseTag||options.latest) {
+    if (options.latest) urlRequest += "/latest";
+    else urlRequest += `/tags/${options.releaseTag}`;
     return getJSON<githubRelease>({
       url: urlRequest,
       headers: options.token?{Authorization: `token ${options.token}`}:{}
@@ -73,7 +82,8 @@ export async function GithubRelease(options: {repository: string, owner: string,
   }
   const data: githubRelease[] = [];
   let page = 1;
-  if (options.pageLimit) options.pageLimit = Math.min(options.pageLimit, 100);
+  if (options.pageAt) options.pageAt = Math.min(options.pageAt, 100);
+  if (options.peer) options.peer = Math.min(options.peer, 100);
   while (true) {
     const request = await getJSON<githubRelease[]>({
       url: urlRequest,
@@ -86,7 +96,7 @@ export async function GithubRelease(options: {repository: string, owner: string,
     data.push(...request);
     if (!options.all) break;
     if (request.length === 0) break;
-    if (options.pageLimit && page >= options.pageLimit) break;
+    if (options.pageAt && page >= options.pageAt) break;
   }
   return data;
 }
