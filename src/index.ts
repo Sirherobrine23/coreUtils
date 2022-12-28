@@ -8,11 +8,15 @@ import * as httpRequestClient from "./request/client.js";
 import * as DockerRegistry from "./DockerRegistry/index.js";
 import * as Ar from "./ar.js";
 import * as DebianPackage from "./deb.js";
+import * as googleDriver from "./googleDrive.js";
+import * as oracleBucket from "./oracle_cloud/bucket.js";
 
 // Export
 export default {
   DockerRegistry: DockerRegistry.default,
   Ar: Ar.default,
+  oracleBucket: oracleBucket.default,
+  googleDriver,
   extendFs: extendFs.default,
   httpRequest,
   httpRequestClient,
@@ -33,5 +37,7 @@ export {
   DockerRegistry,
   extendsCrypto,
   Ar,
-  DebianPackage
+  DebianPackage,
+  oracleBucket,
+  googleDriver,
 };

@@ -64,13 +64,11 @@ type githubReleaseBase = {
   repository: string,
   owner: string,
   token?: string,
-  releaseTag?: string,
-  latest?: boolean,
 };
 
+export async function getRelease(options: githubReleaseBase & {latest?: boolean, releaseTag?: string}): Promise<githubRelease>;
 export async function getRelease(options: githubReleaseBase & {all?: boolean, pageAt?: number, peer?: number}): Promise<githubRelease[]>;
-export async function getRelease(options: githubReleaseBase): Promise<githubRelease>;
-export async function getRelease(options: githubReleaseBase & {all?: boolean, pageAt?: number, peer?: number}): Promise<githubRelease|githubRelease[]> {
+export async function getRelease(options: githubReleaseBase & {all?: boolean, pageAt?: number, peer?: number, latest?: boolean, releaseTag?: string}): Promise<githubRelease|githubRelease[]> {
   let urlRequest = `https://api.github.com/repos/${options.owner}/${options.repository}/releases`;
   if (options.releaseTag||options.latest) {
     if (options.latest) urlRequest += "/latest";
