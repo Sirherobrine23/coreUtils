@@ -3,6 +3,7 @@ node_modules/
 *.tgz
 
 # test files
+examples/souces/
 *.deb
 *.tar.*
 *.tar

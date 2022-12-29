@@ -1,11 +1,11 @@
-import { promises as fs, createReadStream } from "node:fs";
-import { Readable } from "node:stream";
-import { format } from "node:util";
-import { Decompressor } from "lzma-native";
+import { createReadStream, createWriteStream, promises as fs } from "node:fs";
+import { Readable, Writable } from "node:stream";
+import { Decompressor, Compressor } from "lzma-native";
 import { createHashAsync } from "./extendsCrypto.js";
 import * as Ar from "./ar.js";
+import extendsFs from "./extendsFs.js";
 import path from "node:path";
-import extendFs from "./extendsFs.js";
+import zlib from "node:zlib";
 import tar from "tar";
 
 export type debianControl = {
@@ -95,77 +95,113 @@ export async function extractControl(fileStream: Readable, fnControl?: (control:
   });
 }
 
-export async function packDeb(folderPath: string) {
-  // throw new Error("Not implemented");
-  if (!await extendFs.isDirectory(folderPath)) throw new Error(format("'%s' if not directory", folderPath));
-  let debianFolder = path.resolve(folderPath, "DEBIAN");
-  if (await extendFs.exists(path.resolve(folderPath, "debian"))) debianFolder = path.resolve(folderPath, "debian");
-  if (!await extendFs.exists(debianFolder)) throw new Error("debian folder not exists");
-  const controlFile = path.resolve(debianFolder, "control");
-  if (!await extendFs.exists(controlFile)) throw new Error("control file not exists");
+export type packOptions = {
+  cwd: string,
+  outputFile?: string,
+  compress?: "gzip"|"xz",
+  getStream?: boolean,
+};
 
-  const pack = Ar.createPack();
-  Promise.resolve().then(async () => {
-    // control.tar.gz
-    const tmpControl = path.resolve(folderPath, "..", "control.tar.gz");
-    const tmpData = path.resolve(folderPath, "..", "data.tar.gz");
-    if (!((await fs.readFile(controlFile)).toString().endsWith("\n"))) await fs.appendFile(controlFile, "\n");
-    const dataFiles = (await fs.readdir(folderPath)).filter(filePath => !(filePath === "DEBIAN"||filePath === "debian"));
-    const debianFiles = (await fs.readdir(debianFolder)).filter(filePath => {
-      const data = ["changelog", "compat", "control", "copyright", "docs", "rules", "source", "watch"];
-      return data.includes(filePath);
-    });
+async function createDpkgAr(out: string, control: string, data: string) {
+  const timestamp = (Date.now()/1000).toFixed();
+  const fd = await fs.open(out, "w");
+  await fd.write(Buffer.from("213C617263683E0A", "hex"));
 
-    // debian-binary
-    const debianBinary = Buffer.from("2.0\n", "utf8");
-    await pack.addFile({
-      name: "debian-binary",
-      size: debianBinary.length,
-      time: new Date(),
-      owner: 0,
-      group: 0,
-      mode: 100644
-    }, debianBinary);
+  // debian-binary
+  const version = Buffer.from("2.0\n");
+  await fd.write(Buffer.concat([
+    Ar.createHead("debian-binary", {mtime: timestamp, size: version.length, mode: "100644"}),
+    version
+  ]));
 
-    await tar.create({
-      gzip: true,
-      cwd: debianFolder,
-      file: tmpControl
-    }, debianFiles)
-    const controlStats = await fs.stat(controlFile);
-    await pack.addFile({
-      name: "control.tar.gz",
-      size: controlStats.size,
-      time: controlStats.mtime,
-      mode: 100644,
-      owner: 0,
-      group: 0,
-    }, createReadStream(tmpControl));
+  // control.tar
+  await fd.write(Ar.createHead(control, {mtime: timestamp, size: 0, mode: "100644"}));
+  const readControl = createReadStream(control);
+  await new Promise((done, rejects) => {
+    readControl.pipe(new Writable({
+      write: (chunck, _, cb) => fd.write(chunck).then(() => cb()).catch(cb),
+      destroy(error, callback) {
+        if (error) rejects(error);
+        callback(error);
+        setTimeout(() => done(null), 100);
+      },
+    }));
+  });
 
-    await tar.create({
-      gzip: true,
-      cwd: folderPath,
-      file: tmpData
-    }, dataFiles)
-    const dataStats = await fs.stat(tmpData);
-    await pack.addFile({
-      name: "data.tar.gz",
-      size: dataStats.size,
-      time: dataStats.mtime,
-      mode: 100644,
-      owner: 0,
-      group: 0,
-    }, createReadStream(tmpData));
+  // data.tar
+  await fd.write(Ar.createHead(data, {mtime: timestamp, size: 0, mode: "100644"}));
+  const readData = createReadStream(data);
+  await new Promise((done, rejects) => {
+    readData.pipe(new Writable({
+      write: (chunck, _, cb) => fd.write(chunck).then(() => cb()).catch(cb),
+      destroy(error, callback) {
+        if (error) rejects(error);
+        callback(error);
+        setTimeout(() => done(null), 100);
+      },
+    }));
+  });
+}
 
-    await fs.rm(tmpControl);
-    await fs.rm(tmpData);
-    return pack.push(null);
-  }).catch(err => pack.emit("error", err));
-  return {
-    pack,
-    wait: async () => new Promise<void>((done, reject) => {
-      pack.once("end", done);
-      pack.on("error", reject);
-    }),
-  };
+export async function packDeb(options: packOptions) {
+  const control = parseControlFile(await fs.readFile(path.join(options.cwd, "DEBIAN", "control"), "utf8"));
+  if (!options.outputFile) options.outputFile = `${options.cwd}.deb`;
+  const tmpFolder = path.resolve(options.cwd, "..", `tmp-${control.Package}-${control.Version}-${control.Architecture ?? "all"}`);
+  if (!await extendsFs.exists(tmpFolder)) await fs.mkdir(tmpFolder, {recursive: true});
+  const debianPath = await extendsFs.exists(path.join(options.cwd, "DEBIAN"))?path.join(options.cwd, "DEBIAN"):path.join(options.cwd, "debian");
+
+  const controlFiles = (await fs.readdir(debianPath)).filter(file => {if (file === "control") return true; if (file === "md5sums") return true; if (file === "conffiles") return true; if (file === "preinst") return true; if (file === "postinst") return true; if (file === "prerm") return true; if (file === "postrm") return true; return false;});
+  let controlFile = path.join(tmpFolder, "control.tar");
+  await tar.create({
+    cwd: debianPath,
+    gzip: false,
+    file: controlFile,
+    mode: 100644,
+    prefix: "./",
+    portable: true
+  }, controlFiles);
+
+  if ((options.compress) === "gzip") {
+    const gzip = createReadStream(controlFile).pipe(zlib.createGzip()).pipe(createWriteStream(controlFile+".gz"));
+    await new Promise((done, reject) => gzip.once("close", done).once("error", reject));
+    await fs.rm(controlFile)
+    controlFile += ".gz";
+  } else if (options.compress === "xz") {
+    const xz = createReadStream(controlFile).pipe(Compressor()).pipe(createWriteStream(controlFile+".xz"));
+    await new Promise((done, reject) => xz.once("close", done).once("error", reject));
+    await fs.rm(controlFile)
+    controlFile += ".xz";
+  }
+
+  const dataFiles = (await fs.readdir(options.cwd)).filter(file => !(["DEBIAN", "debian"].includes(file)));
+  let dataFile = path.join(tmpFolder, "data.tar");
+  await tar.create({
+    cwd: options.cwd,
+    gzip: false,
+    file: dataFile,
+    portable: true,
+    mode: 100644
+  }, dataFiles);
+  if ((options.compress) === "gzip") {
+    const gzip = createReadStream(dataFile).pipe(zlib.createGzip()).pipe(createWriteStream(dataFile+".gz"));
+    await new Promise((done, reject) => gzip.once("close", done).once("error", reject));
+    await fs.rm(dataFile);
+    dataFile += ".gz";
+  } else if (options.compress === "xz") {
+    const xz = createReadStream(dataFile).pipe(Compressor()).pipe(createWriteStream(dataFile+".xz"));
+    await new Promise((done, reject) => xz.once("close", done).once("error", reject));
+    await fs.rm(dataFile);
+    dataFile += ".xz";
+  }
+
+  // Create deb file
+  await createDpkgAr(options.outputFile, controlFile, dataFile);
+
+  // Remove tmp folder
+  console.log(tmpFolder);
+  // await fs.rm(tmpFolder, {recursive: true, force: true});
+
+  // get return
+  if (options.getStream) return createReadStream(options.outputFile);
+  return options.outputFile;
 }

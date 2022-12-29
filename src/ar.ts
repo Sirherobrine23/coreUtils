@@ -1,6 +1,7 @@
 import { Readable, Writable } from "node:stream";
 import { ReadStream } from "node:fs";
 import debug from "debug";
+import path from "node:path";
 const debugArExtract = debug("coreutils:ar:extract");
 const debugArPack = debug("coreutils:ar:pack");
 const endHead = Buffer.from([0x60, 0x0A]);
@@ -149,6 +150,18 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
   return internalStream;
 }
 
+export function createHead(filename: string, info: {mode?: "100644", mtime?: Date|string, size: number}) {
+  if (!info.mtime) info.mtime = new Date();
+  const controlHead = Buffer.alloc(60, 0x20);
+  controlHead.write(path.basename(filename), 0, 16);
+  controlHead.write((typeof info.mtime === "string" ? info.mtime : (info.mtime.getTime()/1000).toFixed()), 16, 12);
+  controlHead.write("0", 28, 6);
+  controlHead.write("0", 34, 6);
+  controlHead.write(String(info?.mode ?? "100644"), 40, 6);
+  controlHead.write(String(info.size), 48, 10);
+  controlHead.write("`\n`", 58, 2);
+  return controlHead;
+}
 
 export function createPack() {
   class pack extends Readable {
