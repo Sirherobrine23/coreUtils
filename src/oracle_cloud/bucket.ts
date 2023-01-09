@@ -1,6 +1,7 @@
 import endpoint, {authKey, regionLocation} from "./endpoint.js";
 import { bufferFetch, getJSON, pipeFetch } from "../request/simples.js";
-import { Readable } from "stream";
+import { Readable } from "node:stream";
+import { ReadStream } from "node:fs";
 
 export type fileObject = {
   objects: {
@@ -54,7 +55,7 @@ export default async function main(region: regionLocation, bucketName: string, b
     });
   }
 
-  async function uploadFile(name: string, file: Readable|ReadableStream|Buffer) {
+  async function uploadFile(name: string, file: Readable|ReadStream|Buffer) {
     if (!name.startsWith("/")) name = `/${name}`;
     return bufferFetch({
       url: `${baseURL}/o${name}`,

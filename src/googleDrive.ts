@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { google } from "googleapis";
 import { Readable } from "node:stream";
+import { ReadStream } from "node:fs"
 
 export async function GoogleDriver(clientID: string, clientSecret: string, options?: {token?: string, authCallback?: (url?: string, token?: string) => Promise<void>}) {
   // Oauth2
@@ -63,7 +64,7 @@ export async function GoogleDriver(clientID: string, clientSecret: string, optio
     return (await files.get({alt: "media", fileId: file.id}, {responseType: "stream"})).data;
   }
 
-  async function uploadFile(fileName: string, fileStream: ReadableStream|Readable, folderID?: string) {
+  async function uploadFile(fileName: string, fileStream: ReadStream|Readable, folderID?: string) {
     const res = await files.create({
       fields: "id, name, size",
       requestBody: {
