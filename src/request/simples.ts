@@ -2,11 +2,6 @@ import gotStands, { Method, Request, RequestError } from "got";
 import { JSDOM } from "jsdom";
 import * as fs from "node:fs";
 import * as stream from "node:stream";
-import debug from "debug";
-const requestsDebug = debug("coreutils:request");
-const responseDebug = debug("coreutils:request:response");
-const pipeDebug = debug("coreutils:request:pipe");
-const bufferDebug = debug("coreutils:request:buffer");
 const got = gotStands.extend({
   enableUnixSockets: true,
   http2: true,
@@ -37,7 +32,6 @@ export class responseError {
           this.data = JSON.parse(this.data);
         } catch {}
       }
-      responseDebug("catch error, %O", this);
       return this;
     }
     throw err;
@@ -76,22 +70,17 @@ export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStre
   if ((["GET", "get"] as Method[]).includes(method)) delete options.body;
   if (options.body) {
     if (typeof options.body === "string") {
-      requestsDebug("Switch to body string '%s'", urlRequest);
       request["body"] = options.body;
     } else if (Buffer.isBuffer(options.body)) {
-      requestsDebug("Switch to body Buffer '%s'", urlRequest);
       request["body"] = options.body;
     }
     else if (options.body instanceof stream.Readable||options.body instanceof fs.ReadStream) {
-      requestsDebug("Switch to body Stream '%s'", urlRequest);
       request["body"] = options.body;
     } else {
-      requestsDebug("Switch to json body '%s'", urlRequest);
       request["json"] = options.body;
     }
     delete options.body;
   }
-  pipeDebug("Fetching data with options: %O", {...options, ...request, stream: "replace to show"});
   const gotStream = got.stream(urlRequest, {
     isStream: true,
     headers: options.headers||{},
@@ -100,7 +89,6 @@ export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStre
   });
 
   if (!options.stream) {
-    pipeDebug("without finishing escort");
     return gotStream;
   } else {
     await new Promise<void>((done, reject) => {
@@ -112,7 +100,6 @@ export async function pipeFetch(options: requestOptions & {stream?: fs.WriteStre
         return done();
       });
     }).catch(err => Promise.reject(new responseError(err)));
-    pipeDebug("pipe end");
   }
 }
 
@@ -132,30 +119,24 @@ export async function bufferFetch(options: string|requestOptions) {
   const request = {};
   if (options.body) {
     if (typeof options.body === "string") {
-      requestsDebug("Switch to body string '%s'", urlRequest);
       request["body"] = options.body;
     } else if (Buffer.isBuffer(options.body)) {
-      requestsDebug("Switch to body Buffer '%s'", urlRequest);
       request["body"] = options.body;
     }
     else if (options.body instanceof stream.Readable||options.body instanceof fs.ReadStream) {
-      requestsDebug("Switch to body Stream '%s'", urlRequest);
       request["body"] = options.body;
     } else {
-      requestsDebug("Switch to json body '%s'", urlRequest);
       request["json"] = options.body;
     }
     delete options.body;
   }
 
-  requestsDebug("Fetching data with options: %O", {...options, ...request});
   return got(urlRequest, {
     responseType: "buffer",
     headers: options.headers||{},
     method,
     ...request
   }).then(res => {
-    bufferDebug("end request data");
     return {
       headers: res.headers,
       data: Buffer.from(res.body),

@@ -16,11 +16,9 @@ describe("ar", function () {
     }
     return new Promise(async (done, reject) => {
       createReadStream("examples/gh.deb").on("error", reject).on("end", done).pipe(createUnpack((info, st) => {
-        if (process.env.DEBUG) console.log("Ar file info %o", info);
         if (!info.name.includes(".tar")) return st;
         return st.pipe(list({
           onentry: entry => {
-            if (process.env.DEBUG) console.log("Ar tar extract, from %s, entry tar path: %s", info.name, entry.path);
           },
         }));
       }));
