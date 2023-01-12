@@ -1,9 +1,7 @@
 import type { ObjectEncodingOptions } from "node:fs";
 import * as child_process from "node:child_process";
 import * as extendFs from "./extendsFs.js";
-import debug from "debug";
 import path from "node:path";
-const childDebug = debug("coreutils:childprocess");
 
 export type childProcessPromise = {
   code?: number|NodeJS.Signals,
@@ -35,7 +33,6 @@ export async function execFile(command: string): Promise<childProcessPromise>;
 export async function execFile(command: newExecFileOptions): Promise<childProcessPromise>;
 export async function execFile(command: string|newExecFileOptions, args?: string[], options?: execFileOptions): Promise<childProcessPromise> {
   if (typeof command === "string") {
-    childDebug("Converting command to object in execFile");
     if (!args) args = [];
     if (!options) options = {};
     command = {
@@ -48,7 +45,6 @@ export async function execFile(command: string|newExecFileOptions, args?: string
   if (fixedCommand.options.maxBuffer === undefined) fixedCommand.options.maxBuffer = Infinity;
   fixedCommand.options.env = {...process.env, ...fixedCommand.options?.env};
   fixedCommand.options.encoding = "binary";
-  childDebug("Command: '%s', Args: %O, options: %O", fixedCommand.command, fixedCommand.args, fixedCommand.options);
   return new Promise<childProcessPromise>((done, reject) => {
     const child = child_process.execFile(fixedCommand.command, fixedCommand.args, fixedCommand.options, (err, stdout: Buffer, stderr: Buffer) => {
       if (err) return reject(new execError(err, child.exitCode, child.exitSignal));
@@ -68,7 +64,6 @@ export async function exec(command: string): Promise<childProcessPromise>;
 export async function exec(command: newExecOptions): Promise<childProcessPromise>;
 export async function exec(command: string|newExecOptions, options?: execOptions): Promise<childProcessPromise> {
   if (typeof command === "string") {
-    childDebug("Converting command to object in exec");
     if (!options) options = {};
     command = {
       command: command,
@@ -79,7 +74,6 @@ export async function exec(command: string|newExecOptions, options?: execOptions
   if (fixedCommand.options.maxBuffer === undefined) fixedCommand.options.maxBuffer = Infinity;
   fixedCommand.options.env = {...process.env, ...fixedCommand.options?.env};
   fixedCommand.options.encoding = "binary";
-  childDebug("Command: '%s', options: %O", fixedCommand.command, fixedCommand.options);
   return new Promise<childProcessPromise>((done, reject) => {
     const child = child_process.exec(fixedCommand.command, fixedCommand.options, (err, stdout: Buffer, stderr: Buffer) => {
       if (err) return reject(new execError(err, child.exitCode, child.exitSignal));

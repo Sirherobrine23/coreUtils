@@ -1,8 +1,6 @@
 import { Readable } from "node:stream";
 import * as httpRequest from "../request/simples.js";
 import * as dockerUtils from "./utils.js";
-import debug from "debug";
-const manifestDebug = debug("coreutils:oci");
 
 export const ARCH_GO_NODE: {[arch in NodeJS.Architecture]?: string} = Object.freeze({
   ppc64: "ppc64",
@@ -164,11 +162,9 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
       }
     });
     if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.list.v2+json") {
-      manifestDebug("Switch to Docker manifest with multi arch, Manifest: %O", manifest);
       const platformsManifest: dockerManifestMultiArchPlatform = manifest;
       return platformsManifest;
     } else if (manifest?.manifests?.some(layer => layer?.mediaType === "application/vnd.oci.image.manifest.v1+json")) {
-      manifestDebug("Switch to OCI manifest Multi Arch, Manifest: %O", manifest);
       const ociManeifestPlatforms: ociManifestMultiArchPlatform = manifest;
       return ociManeifestPlatforms;
     }
@@ -181,19 +177,16 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
     token = token ?? await dockerUtils.getToken(repoConfig);
     return manifestMultiArch(reference, token).then((manifest: any) => {
       if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.list.v2+json") {
-        manifestDebug("Switch to Docker manifest with multi arch, Manifest: %O", manifest);
         const platformsManifest = manifest as dockerManifestMultiArchPlatform;
         const find = platformsManifest.manifests.find(target => target.platform.architecture === ARCH_GO_NODE[platform_target?.arch||process.arch] && target.platform.os === OS_GO_NODE[platform_target?.platform||process.platform]);
         if (!find) throw new Error("Current platform not avaible")
         return imageManifest(find.digest, token);
       } else if (manifest?.manifests?.some(layer => layer?.mediaType === "application/vnd.oci.image.manifest.v1+json")) {
-        manifestDebug("Switch to OCI manifest Multi Arch, Manifest: %O", manifest);
         const ociManeifestPlatforms = manifest as ociManifestMultiArchPlatform;
         const find = ociManeifestPlatforms.manifests.find(target => target.platform.architecture === ARCH_GO_NODE[platform_target?.arch||process.arch] && target.platform.os === OS_GO_NODE[platform_target?.platform||process.platform]);
         if (!find) throw new Error("Current platform not avaible")
         return imageManifest(find.digest, token);
       }
-      manifestDebug("Unknow manifest: %O", manifest);
       throw new Error("Manifest not found");
     }).catch(async () => {
       const manifest = await httpRequest.getJSON({
@@ -204,21 +197,18 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
         }
       });
       if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.v2+json") {
-        manifestDebug("Docker layer manifest");
         const manifestLayers: dockerManifestLayer = manifest;
         return {
           token,
           ...manifestLayers,
         };
       } else if (manifest?.config?.mediaType === "application/vnd.oci.image.config.v1+json") {
-        manifestDebug("OCI layer manifest");
         const manifestLayers: ociManifestLayer = manifest;
         return {
           token,
           ...manifestLayers,
         };
       }
-      manifestDebug("Unknow manifest: %O", manifest);
       throw new Error("Invalid manifest");
     });
   }
@@ -255,11 +245,7 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
       await new Promise<void>((resolve, reject) => {
         const layer = manifest.layers[layerIndex];
         return blobLayerStream(layer.digest, token).then((stream) => {
-          let lockNext = false;
           const next = () => {
-            if (lockNext) return manifestDebug("%s call to next layer, so blocked to %s", layer.digest, manifest.layers[layerIndex+2]?.digest||"No more layers");
-            lockNext = true;
-            manifestDebug("%s call to next layer %s", layer.digest, manifest.layers[layerIndex+1]?.digest||"No more layers");
             return resolve();
           }
           stream.once("error", reject);
@@ -267,14 +253,11 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
           return fn({
             layer,
             breakloop: () => {
-              manifestDebug("%s call to break loop", layer.digest);
               layerIndex = (layers.length + 1);
               return resolve();
             },
             skipNextLayer: () => {
-              if (lockNext) return manifestDebug("%s call to skip next layer, so blocked to %s", layer.digest, manifest.layers[layerIndex+2]?.digest||"No more layers");
               layerIndex++;
-              manifestDebug("%s call to skip next layer, %s", layer.digest, manifest.layers[layerIndex+1]?.digest||"No more layers");
               return resolve();
             },
             next,

@@ -3,8 +3,6 @@ import { getOctokit } from "@actions/github";
 import { getJSON } from "./simples.js";
 import stream from "node:stream";
 import fs from "node:fs/promises";
-import debug from "debug";
-const githubRateDebug = debug("coreutils:github:ratelimit");
 export type githubRelease = Awaited<ReturnType<ReturnType<typeof getOctokit>["rest"]["repos"]["listReleases"]>>["data"][number];
 
 export type rateLimit = {
@@ -55,7 +53,6 @@ export async function getReateLimit(token?: string) {
     url: "https://api.github.com/rate_limit",
     headers: token?{Authorization: `token ${token}`}:{}
   });
-  githubRateDebug("Limit data: %O", rate);
   if (rate.rate.remaining === 0) throw new Error("Github API max requests");
   return rate;
 }

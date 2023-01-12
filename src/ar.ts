@@ -1,9 +1,6 @@
 import { Readable, Writable } from "node:stream";
 import { ReadStream } from "node:fs";
-import debug from "debug";
 import path from "node:path";
-const debugArExtract = debug("coreutils:ar:extract");
-const debugArPack = debug("coreutils:ar:pack");
 const endHead = Buffer.from([0x60, 0x0A]);
 
 export type fileInfo = {
@@ -24,7 +21,6 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
   let oldBuffer: Buffer;
   let fileStream: Readable;
   let fileStreamSize: number;
-  let filename: string;
   const internalStream = new Writable({
     defaultEncoding: "binary",
     objectMode: false,
@@ -37,7 +33,6 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
         if (!fileStream.destroyed||fileStream.readable) fileStream.push(oldBuffer.subarray(0, fileStreamSize));
       }
       oldBuffer = undefined;
-      debugArExtract("end file stream");
       callback();
     },
     destroy(error, callback) {
@@ -46,10 +41,8 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
     },
     write(remoteChunk, encoding, callback) {
       let chunk = Buffer.isBuffer(remoteChunk) ? remoteChunk : Buffer.from(remoteChunk, encoding);
-      // debugArExtract("File size in start function %f", fileStreamSize);
       if (oldBuffer) {
         chunk = Buffer.concat([oldBuffer, chunk]);
-        // debugArExtract("concat old buffer with length %f and new buffer with length %f", oldBuffer.length, chunk.length);
       }
       oldBuffer = undefined;
       // file signature
@@ -57,12 +50,10 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
         // More buffer to maneger correctly
         if (chunk.length < 70) {
           oldBuffer = chunk;
-          // debugArExtract("wait more buffer to read file signature");
           return callback();
         }
         const signature = chunk.subarray(0, 8).toString("ascii");
         if (signature !== "!<arch>\n") {
-          debugArExtract("invalid file signature, recived '%s'", signature);
           return callback(new Error("Invalid ar file"));
         }
         initialHead = false;
@@ -77,9 +68,7 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
           if (!fileStream.destroyed||fileStream.readable) fileStream.push(fixedChunk);
           fileStreamSize -= fixedChunk.length;
           chunk = chunk.subarray(fixedChunk.length);
-          // debugArExtract("send chunk to file stream, total %f, rest file to send %f, chunk avaible %f", fixedChunk.length, fileStreamSize, chunk.length, filename);
           if (fileStreamSize <= 0) {
-            debugArExtract("end file stream");
             fileStream.push(null);
             fileStream = undefined;
           }
@@ -105,11 +94,9 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
           if ((!name)||(time.toString() === "Invalid Date")||(isNaN(owner))||(isNaN(group))||(isNaN(mode))||(isNaN(size))) continue;
           if (head.subarray(58, 60).toString("ascii") !== endHead.toString("ascii")) continue;
 
-          debugArExtract("file header valid, name '%s', time '%s', owner '%f', group '%f', mode '%f', size '%f', start in %f and %f", name, time, owner, group, mode, size, fistCharByte, lastByteHead);
           if (fistCharByte >= 1) {
             const chucked = chunk.subarray(0, fistCharByte);
-            if (!fileStream) debugArExtract("chunk from %s has data lost before header, size %o", filename, [chucked.toString("ascii")]);
-            else {
+            if (fileStream) {
               fileStream.push(chucked);
               fileStream.push(null);
             }
@@ -120,7 +107,6 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
 
           fileStream = new Readable({read() {}});
           if (fn) fn({name, time, owner, group, mode, size}, fileStream);
-          filename = name;
           fileStreamSize = size;
 
           const fileSize = chunk.subarray(0, size);
@@ -130,10 +116,8 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
 
           if (fileStreamSize === 0) {
             if (!fileStream.destroyed||fileStream.readable) fileStream.push(null);
-            // debugArExtract("Close stream %s, current buffer includes data bytes %f, new Buffer size %f", name, fileSize.length, chunk.length);
             fileStream = undefined;
             fileStreamSize = undefined;
-            filename = undefined;
           }
 
           // Restart loop to check if chunk has more headers
@@ -143,7 +127,6 @@ export function createUnpack(fn?: (info: fileInfo, stream: Readable) => void) {
 
       // Get more buffer data
       if (chunk.length > 0) oldBuffer = chunk;
-      debugArExtract("End funcion Chunk size %f", chunk.length);
       return callback();
     }
   });
@@ -200,7 +183,6 @@ export function createPack() {
 
       // Add header to stream
       this.push(head);
-      debugArPack("Add header to stream %o", [head.toString("ascii")]);
 
       if (file instanceof Readable) {
         await new Promise<void>((done, reject) => {

@@ -1,4 +1,4 @@
-import { createReadStream, createWriteStream, promises as fs } from "node:fs";
+import { createReadStream, createWriteStream, promises as fs, ReadStream } from "node:fs";
 import { Readable, Writable } from "node:stream";
 import { Decompressor, Compressor } from "lzma-native";
 import { createHashAsync } from "./extendsCrypto.js";
@@ -8,9 +8,10 @@ import path from "node:path";
 import zlib from "node:zlib";
 import tar from "tar";
 
+export type debianArch = "all"|"amd64"|"arm64"|"armel"|"armhf"|"i386"|"mips64el"|"mipsel"|"ppc64el"|"s390x";
 export type debianControl = {
   Package: string,
-  Architecture: string,
+  Architecture: debianArch|string,
   Version: string,
   Priority: string,
   Maintainer?: string,
@@ -28,37 +29,103 @@ export type debianControl = {
   SHA256?: string,
   Homepage?: string,
   Description?: string,
-  Task?: string
+  Task?: string,
+  [anyKey: string]: string|number|boolean
 };
 
-export function parseControlFile(control: string|Buffer) {
-  if (Buffer.isBuffer(control)) control = control.toString();
-  const controlObject: {[key: string]: string|number} = {};
-  for (const line of control.split(/\r?\n/)) {
-    if (/^[\w\S]+:/.test(line)) {
-      const [, key, value] = line.match(/^([\w\S]+):(.*)$/);
-      controlObject[key.trim()] = value.trim();
-    } else {
-      controlObject[Object.keys(controlObject).at(-1)] += line;
+/**
+ *
+ * @param control - Control buffer file
+ * @returns
+ */
+export function parseControl(control: Buffer) {
+  if (!control) throw new Error("Control is empty");
+  else if (!Buffer.isBuffer(control)) throw new TypeError("Control is not a buffer");
+  const packageData: {[key: string]: string} = {};
+  let key: string;
+  for (let chuckLength = 0; chuckLength < control.length; chuckLength++) {
+    // Get new key
+    if (!key && (control[chuckLength] === 0x3A && control[chuckLength+1] !== 0x3A)) {
+      key = control.subarray(0, chuckLength).toString().trim();
+      control = control.subarray(chuckLength+1);
+      chuckLength = 0;
+      continue;
+    }
+
+    // Add to key
+    if (key) {
+      if (control[chuckLength] === 0x0A) {
+        if (!packageData[key]) packageData[key] = "";
+        packageData[key] += control.subarray(0, chuckLength).toString();
+        control = control.subarray(chuckLength);
+        if (packageData[key].trim() === ".") continue;
+        chuckLength = 0;
+        key = undefined;
+        continue;
+      }
     }
   }
 
-  // Delete blank keys
-  Object.keys(controlObject).forEach((key) => {
-    if (controlObject[key].toString().trim().length <= 0) delete controlObject[key];
-  });
-
-  // Convert numbers
-  Object.keys(controlObject).forEach((key) => {
-    if (!isNaN(Number(controlObject[key]))) controlObject[key] = Number(controlObject[key]);
-  });
-
-  const data = controlObject as debianControl;
-  data.Priority = data.Priority || "standard";
-  return data;
+  // Check is valid object
+  Object.keys(packageData).forEach(key => packageData[key] = packageData[key].trim());
+  if (!(packageData.Package && packageData.Architecture && packageData.Version)) {
+    const err = new Error("Invalid control file");
+    err["packageData"] = packageData;
+    throw err;
+  }
+  if (packageData.Size) packageData.Size = Number(packageData.Size) as any;
+  if (packageData["Installed-Size"]) packageData["Installed-Size"] = Number(packageData["Installed-Size"]) as any;
+  return packageData as debianControl;
 }
 
-export async function extractControl(fileStream: Readable, fnControl?: (control: debianControl) => void) {
+/**
+ * Extract all Packages from binary file (/dists/${distribuition}/${suite}/binary-${arch}/Packages
+ *
+ * @param streamRead - Packages stream (raw text not gzip or xz)
+ * @returns
+ */
+export async function parsePackages(streamRead: Readable|ReadStream) {
+  const packageArray: debianControl[] = [];
+  await new Promise<void>((done, reject) => {
+    let oldBuffer: Buffer;
+    streamRead.pipe(new Writable({
+      defaultEncoding: "binary",
+      decodeStrings: true,
+      highWaterMark: 1024,
+      final(callback) {
+        if (oldBuffer?.length > 0) {
+          packageArray.push(parseControl(oldBuffer));
+        }
+        oldBuffer = undefined;
+        callback();
+        done();
+      },
+      write(chunk, encoding, callback) {
+        if (!(encoding === "binary" && Buffer.isBuffer(chunk))) chunk = Buffer.from(chunk, encoding);
+        if (oldBuffer?.length > 0) chunk = Buffer.concat([oldBuffer, chunk]);
+        for (let chunckLength = 0; chunckLength < chunk.length; chunckLength++) {
+          // \n == 0x0A
+          if (chunk[chunckLength] === 0x0A && chunk[chunckLength+1] === 0x0A) {
+            packageArray.push(parseControl(chunk.subarray(0, chunckLength)));
+            chunk = chunk.subarray(chunckLength+2);
+            chunckLength = 0;
+          }
+        }
+        oldBuffer = chunk;
+        callback();
+      },
+    })).on("error", reject);
+  });
+  return packageArray;
+}
+
+/**
+ *
+ * @param fileStream - Debian file stream
+ * @param fnControl - Callback to get control file (optional)
+ * @returns control file
+ */
+export async function getControl(fileStream: Readable|ReadStream, fnControl?: (control: debianControl) => void) {
   return new Promise<debianControl>((done, reject) => {
     let fileSize = 0;
     const fileHash = createHashAsync("all", fileStream).catch(reject);
@@ -72,7 +139,7 @@ export async function extractControl(fileStream: Readable, fnControl?: (control:
             if (!controlEntry.path.endsWith("control")) return null;
             let controlFile: Buffer;
             return controlEntry.on("data", chunck => controlFile = (!controlFile)?chunck:Buffer.concat([controlFile, chunck])).once("end", () => {
-              const control = parseControlFile(controlFile.toString());
+              const control = parseControl(controlFile);
               return fileHash.then(hash => {
                 if (!hash) return reject(new Error("Hash not gerenate"));
                 control.MD5sum = hash.md5;
@@ -93,6 +160,69 @@ export async function extractControl(fileStream: Readable, fnControl?: (control:
     fileStream.destroy(err);
     throw err;
   });
+}
+
+export type releaseType = Partial<{
+  Origin: string,
+  Label: string,
+  Suite: string,
+  Codename: string,
+  Date: Date,
+  "Valid-Until": Date,
+  Architectures: string[],
+  Components: string[],
+  Description: string,
+  "Acquire-By-Hash": boolean,
+  SHA1: {hash: string, size: number, file: string}[],
+  SHA256: {hash: string, size: number, file: string}[],
+  SHA512: {hash: string, size: number, file: string}[],
+  MD5Sum: {hash: string, size: number, file: string}[],
+  Changelogs: string,
+}>;
+export async function parseRelease(fileData: Buffer): Promise<releaseType> {
+  const releaseData: {[key: string]: any} = {};
+  let latestKey: string;
+  for (let chunckLength = 0; chunckLength < fileData.length; chunckLength++) {
+    if (!latestKey && (fileData[chunckLength] === 0x3A && fileData[chunckLength+1] !== 0x3A)) {
+      latestKey = fileData.subarray(0, chunckLength).toString();
+      fileData = fileData.subarray(chunckLength+1);
+      chunckLength = 0;
+      continue;
+    }
+
+    if (fileData[chunckLength] === 0x0A) {
+      if (!latestKey) latestKey = Object.keys(releaseData).at(-1);
+      const value = fileData.subarray(0, chunckLength).toString();
+      fileData = fileData.subarray(chunckLength+1);
+      if (!releaseData[latestKey]) releaseData[latestKey] = value;
+      else if (Array.isArray(releaseData[latestKey])) (releaseData[latestKey] as string[]).push(value);
+      else releaseData[latestKey] = [releaseData[latestKey] as string, value];
+      chunckLength = 0;
+      latestKey = undefined;
+      continue;
+    }
+  }
+
+  // trim strings
+  const sum = /([^\s]+)(\t|\s+)([0-9]+)(\t|\s+)([^\s]+)/;
+  Object.keys(releaseData).forEach(key => {
+    if (typeof releaseData[key] === "string") releaseData[key] = releaseData[key].trim();
+    else if (Array.isArray(releaseData[key])) releaseData[key] = releaseData[key].map(str => {
+      if (typeof str === "string") str = str.trim();
+      if (sum.test(str)) {
+        const [, hash,, size,, file] = sum.exec(str);
+        return {hash, size: parseInt(size), file};
+      };
+      return str;
+    });
+    if (["yes", "no"].includes(releaseData[key])) releaseData[key] = (releaseData[key] === "yes");
+  });
+
+  if (releaseData.Date) releaseData.Date = new Date(releaseData.Date);
+  if (releaseData["Valid-Until"]) releaseData["Valid-Until"] = new Date(releaseData["Valid-Until"]);
+  if (releaseData.Architectures) releaseData.Architectures = releaseData.Architectures.split(" ").map(str => str.trim()).filter(Boolean);
+  if (releaseData.Components) releaseData.Components = releaseData.Components.split(" ").map(str => str.trim()).filter(Boolean);
+  return releaseData;
 }
 
 export type packOptions = {
@@ -144,7 +274,7 @@ async function createDpkgAr(out: string, control: string, data: string) {
 }
 
 export async function packDeb(options: packOptions) {
-  const control = parseControlFile(await fs.readFile(path.join(options.cwd, "DEBIAN", "control"), "utf8"));
+  const control = parseControl(await fs.readFile(path.join(options.cwd, "DEBIAN", "control")));
   if (!options.outputFile) options.outputFile = `${options.cwd}.deb`;
   const tmpFolder = path.resolve(options.cwd, "..", `tmp-${control.Package}-${control.Version}-${control.Architecture ?? "all"}`);
   if (!await extendsFs.exists(tmpFolder)) await fs.mkdir(tmpFolder, {recursive: true});
