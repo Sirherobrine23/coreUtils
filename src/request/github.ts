@@ -3,6 +3,7 @@ import { getOctokit } from "@actions/github";
 import { getJSON } from "./simples.js";
 import stream from "node:stream";
 import fs from "node:fs/promises";
+import path from "node:path";
 export type githubRelease = Awaited<ReturnType<ReturnType<typeof getOctokit>["rest"]["repos"]["listReleases"]>>["data"][number];
 
 export type rateLimit = {
@@ -205,11 +206,14 @@ export type githubTree = {
   tree: {
     path: string,
     mode: string,
-    type: "blob"|"tree",
     sha: string,
-    size: number,
     url: string
-  }[],
+  }&({
+    type: "blob",
+    size: number,
+  }|{
+    type: "tree",
+  })[],
 };
 
 export async function githubTree(username: string, repo: string, tree: string = "main") {
@@ -220,4 +224,294 @@ export async function githubTree(username: string, repo: string, tree: string = 
     url: `https://api.github.com/repos/${username}/${repo}/git/trees/${tree}?recursive=true`,
     headers: github_secret?{Authorization: `token ${github_secret}`}:{}
   });
+}
+
+export type braches = {
+  name: string,
+  protected: boolean,
+  commit: {
+    sha: string,
+    url: string
+  }
+};
+
+export type branchInfo = {
+  name: string,
+  commit: {
+    sha: string,
+    node_id: string,
+    commit: {
+      author: {
+        name: string,
+        email: string,
+        date: Date
+      },
+      committer: {
+        name: string,
+        email: string,
+        date: Date
+      },
+      message: string,
+      tree: {
+        sha: string,
+        url: string
+      },
+      url: string,
+      comment_count: number,
+      verification: {
+        reason: "valid"|"unsigned",
+        verified: boolean,
+        signature?: string,
+        payload?: string
+      }
+    },
+    url: string,
+    html_url: string,
+    comments_url: string,
+    author: {
+      login: string,
+      id: number,
+      node_id: string,
+      avatar_url: string,
+      gravatar_id: string,
+      url: string,
+      html_url: string,
+      followers_url: string,
+      following_url: string,
+      gists_url: string,
+      starred_url: string,
+      subscriptions_url: string,
+      organizations_url: string,
+      repos_url: string,
+      events_url: string,
+      received_events_url: string,
+      type: "User"|"Bot",
+      site_admin: false
+    },
+    committer: {
+      login: string,
+      id: number,
+      node_id: string,
+      avatar_url: string,
+      gravatar_id: string,
+      url: string,
+      html_url: string,
+      followers_url: string,
+      following_url: string,
+      gists_url: string,
+      starred_url: string,
+      subscriptions_url: string,
+      organizations_url: string,
+      repos_url: string,
+      events_url: string,
+      received_events_url: string,
+      type: "User"|"Bot",
+      site_admin: false
+    },
+    parents: {
+      sha: string,
+      url: string,
+      html_url: string
+    }[]
+  },
+  _links: {
+    self: string,
+    html: string
+  },
+  protected: boolean,
+  protection_url: string,
+  protection: {
+    enabled: boolean,
+    required_status_checks: {
+      enforcement_level: "non_admins",
+      contexts: string[],
+      checks: {
+        context: string,
+        app_id: any
+      }[]
+    }
+  }
+};
+
+export type tagObject = {
+  name: string,
+  node_id: string,
+  zipball_url: string,
+  tarball_url: string,
+  commit: {
+    sha: string,
+    url: string
+  }
+};
+
+export default GithubManeger;
+/**
+ * All functions in one function
+ * @param owner - Repository owner
+ * @param repository - Repository name
+ * @param token - Github token (optional)
+ * @returns
+ */
+export async function GithubManeger(owner: string, repository: string, token: string = github_secret) {
+  const baseURL = new URL("https://api.github.com/repos/");
+  baseURL.pathname = path.posix.join(baseURL.pathname, owner, repository);
+  const checkExist = await getJSON(baseURL).catch(() => null);
+  if (!checkExist) throw new Error("Repository not found");
+  const octokit = getOctokit(token);
+
+  /**
+   * Get all branches lists
+   * @returns
+   */
+  async function branchList() {
+    let page = 1;
+    const url = new URL("", baseURL);
+    url.pathname = path.posix.join(url.pathname, "branches");
+    url.searchParams.set("per_page", "100");
+    const branchList: braches[] = [];
+    while (true) {
+      url.searchParams.set("page", String(page++));
+      const data: braches[] = await getJSON(url, {headers: token?{Authorization: `token ${token}`}:{}}).catch(() => null);
+      if (!data || (data.length < 0)) break;
+      branchList.push(...data);
+    }
+    return branchList;
+  }
+
+  /**
+   * Get brancher info
+   * @param branch - Branch name
+   * @returns
+   */
+  async function getBranchInfo(branch: string) {
+    const url = new URL("", baseURL);
+    url.pathname = path.posix.join(url.pathname, "branches", branch);
+    return getJSON<branchInfo>(url, {headers: token?{Authorization: `token ${token}`}:{}});
+  }
+
+  async function trees(tree: string) {
+    const requestURL = new URL("", baseURL);
+    requestURL.pathname = path.posix.join(requestURL.pathname, "git", "trees", tree);
+    requestURL.searchParams.set("recursive", "true");
+    return getJSON<githubTree>(requestURL, {headers: token?{Authorization: `token ${token}`}:{}}).catch(() => null);
+  }
+
+  async function tags() {
+    const requestURL = new URL("", baseURL);
+    requestURL.pathname = path.posix.join(requestURL.pathname, "tags");
+    const tags: tagObject[] = [];
+    let page = 1;
+    requestURL.searchParams.set("per_page", "100");
+    while (true) {
+      requestURL.searchParams.set("page", String(page++));
+      const data = await getJSON<tagObject[]>(requestURL, {headers: token?{Authorization: `token ${token}`}:{}}).catch(() => null);
+      if (!data || (data.length < 0)) break;
+      tags.push(...data);
+    }
+  }
+
+  /**
+   * Get all releases lists
+   */
+  async function getRelease(): Promise<githubRelease[]>;
+  /**
+   * Get release info by tag
+   * @param releaseTag - Release tag
+   */
+  async function getRelease(releaseTag: string): Promise<githubRelease>;
+  async function getRelease(releaseTag?: string): Promise<githubRelease|githubRelease[]> {
+    const requestURL = new URL("", baseURL);
+    requestURL.pathname = path.posix.join(requestURL.pathname, "releases");
+    if (releaseTag) {
+      if (releaseTag.trim().toLowerCase() === "latest") requestURL.pathname = path.posix.join(requestURL.pathname, "latest");
+      else requestURL.pathname = path.posix.join(requestURL.pathname, "tags", releaseTag);
+      return getJSON<githubRelease>(requestURL, {headers: token?{Authorization: `token ${token}`}:{}}).catch(() => null);
+    }
+    requestURL.searchParams.set("per_page", "100");
+    let page = 1;
+    const releaseList: githubRelease[] = [];
+    while (true) {
+      requestURL.searchParams.set("page", String(page++));
+      const data: githubRelease[] = await getJSON(requestURL, {headers: token?{Authorization: `token ${token}`}:{}}).catch(() => null);
+      if (!data || (data.length < 0)) break;
+      releaseList.push(...data);
+    }
+    return releaseList;
+  }
+
+  async function releaseManeger(options: {tagName: string, name?: string, body?: string, isPrerelease?: boolean}) {
+    let Release: githubRelease = await getRelease(options.tagName).catch(() => null);
+    if (!Release) Release = await octokit.rest.repos.createRelease({
+      owner,
+      repo: repository,
+      tag_name: options.tagName,
+      name: options.name,
+      body: options.body,
+      prerelease: options.isPrerelease
+    }).then(res => res.data as githubRelease);
+
+    /** List release assets files */
+    async function listFiles() {
+      return (await octokit.rest.repos.listReleaseAssets({
+        owner,
+        repo: repository,
+        release_id: Release.id,
+        per_page: 100
+      })).data as githubRelease["assets"];
+    }
+
+    /** Delete release with node_id */
+    async function deleteFile(node_id: number): Promise<void>;
+    /** find release assets file and delete if exists */
+    async function deleteFile(file_name: string): Promise<void>;
+    async function deleteFile(id_name: number|string): Promise<void> {
+      if (typeof id_name === "string") id_name = (await listFiles()).find(file => file.name === id_name)?.node_id;
+      if (!id_name) throw new Error("No id or file name");
+      await octokit.rest.repos.deleteReleaseAsset({
+        owner,
+        repo: repository,
+        asset_id: id_name as number
+      });
+    }
+
+    /** Upload file to release */
+    async function uploadFile(uploadConfig: releaseOptionsUpload) {
+      if (!uploadConfig) throw new Error("Require");
+      // Delete if exists
+      if ((await listFiles()).some(data => data.name === uploadConfig.name)) await deleteFile(uploadConfig.name);
+      if (typeof uploadConfig.content === "string") {
+        const fileSize = (await fs.lstat(uploadConfig.content)).size;
+        uploadConfig.content = {
+          fileSize,
+          stream: createReadStream(uploadConfig.content)
+        }
+      }
+      return (await octokit.rest.repos.uploadReleaseAsset({
+        owner,
+        repo: repository,
+        release_id: Release.id,
+        name: uploadConfig.name,
+        data: uploadConfig.content.stream as any,
+        headers: {"content-length": uploadConfig.content.fileSize},
+        mediaType: {
+          format: "application/octet-stream"
+        },
+      })).data;
+    }
+
+    return {
+      uploadFile,
+      deleteFile,
+      listFiles
+    };
+  }
+
+  return {
+    branchList,
+    getBranchInfo,
+    trees,
+    getRelease,
+    tags,
+    releaseManeger,
+  };
 }

@@ -3,29 +3,80 @@ import { google } from "googleapis";
 import { Readable } from "node:stream";
 import { ReadStream } from "node:fs"
 
-export async function GoogleDriver(clientID: string, clientSecret: string, options?: {token?: string, authCallback?: (url?: string, token?: string) => Promise<void>}) {
+export type googleOptions = {
+  clientID: string,
+  clientSecret: string,
+  token?: string,
+  authUrl?: (err?: Error, data?: {authUrl?: string, token?: string}) => void,
+};
+
+export default GoogleDriver;
+
+/**
+ * Create client to Google Driver
+ * @returns
+ */
+export async function GoogleDriver(options: string|googleOptions, clientOldSecret?: string, optionsOld?: {token?: string, authCallback?: googleOptions["authUrl"]}) {
+  let clientID: string;
+  let clientSecret: string;
+  let token = optionsOld?.token;
+  let authCallback: googleOptions["authUrl"] = (...args) => console.log("Err: %s, Data: %o", ...args);
+  if (typeof options !== "string") {
+    clientID = options!.clientID;
+    clientSecret = options!.clientSecret;
+    if (options?.token) token = options.token;
+    if (options?.authUrl) authCallback = options.authUrl;
+  } else {
+    clientID = options;
+    clientSecret = clientOldSecret;
+    if (optionsOld?.token) token = optionsOld.token;
+    if (optionsOld?.authCallback) authCallback = optionsOld.authCallback;
+  }
+
   // Oauth2
-  const auth = new google.auth.OAuth2(clientID, clientSecret);
-  if (options?.token) auth.setCredentials({access_token: options.token});
+  let auth = new google.auth.OAuth2(clientID, clientSecret);
+  if (token) auth.setCredentials({access_token: token});
   else {
     await new Promise<void>((done, reject) => {
       const server = createServer(async (req, res) => {
-        const code = (new URL(req.url, `http://${req.headers.host ?? "localhost"}`)).searchParams.get("code");
-        if (!!code) {
-          const authRes = await auth.getToken(code);
-          const token = authRes.tokens.access_token;
-          if (options?.authCallback) await options.authCallback(undefined, token);
-          server.close();
-        }
-      }).listen(0, () => {
+        const search = (new URL(req.url, "http://localhost")).searchParams;
+        const Searchs: {[key: string]: string} = {};
+        search.forEach((value, key) => Searchs[key] = value);
+        if (Searchs["code"]) {
+          try {
+            const authRes = await auth.getToken(Searchs["code"]);
+            const token = authRes.tokens.access_token;
+            await Promise.resolve(authCallback(undefined, {token}));
+            server.close();
+            done();
+            res.writeHead(200, {"Content-Type": "application/json"}).write(JSON.stringify({
+              Searchs,
+              code: Searchs["code"],
+              auth: {
+                ...authRes.tokens,
+                expiry_date: new Date(authRes.tokens.expiry_date),
+              },
+            }, null, 2));
+          } catch (err) {
+            await Promise.resolve(authCallback(err));
+            res.writeHead(400, {"Content-Type": "application/json"}).write(JSON.stringify({code: Searchs["code"], Searchs, err: String(err)}, null, 2));
+          }
+        } else res.writeHead(400, {"Content-Type": "application/json"}).write(JSON.stringify({Searchs}, null, 2));
+        res.end();
+        return;
+      }).listen(0, async () => {
+        const { port } = server.address() as any;
+        auth = null;
+        auth = new google.auth.OAuth2(clientID, clientSecret, `http://localhost:${port}`);
         const url = auth.generateAuthUrl({
           access_type: "offline",
           scope: ["https://www.googleapis.com/auth/drive"],
-          prompt: "consent",
         });
-        if (options?.authCallback) options.authCallback(url, undefined);
-        console.log(`Visit this URL: ${url}`);
-      });
+        await Promise.resolve(authCallback(undefined, {authUrl: url}));
+      }).on("error", reject);
+    }).catch(async err => {
+      await Promise.resolve(authCallback(err));
+      throw err;
     });
   }
 

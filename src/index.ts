@@ -9,25 +9,26 @@ import * as DockerRegistry from "./DockerRegistry/index.js";
 import * as Ar from "./ar.js";
 import * as DebianPackage from "./deb.js";
 import * as googleDriver from "./googleDrive.js";
-import * as oracleBucket from "./oracle_cloud/bucket.js";
+import * as internalOracle from "./oracle_cloud/index.js";
 
 // Export
 export default {
-  DockerRegistry: DockerRegistry.default,
   Ar: Ar.default,
-  oracleBucket: oracleBucket.default,
-  googleDriver,
+  DockerRegistry: DockerRegistry.default,
+  oracleBucket: internalOracle.bucket,
+  googleDriver: googleDriver.default,
+  httpRequestGithub: httpRequestGithub.default,
   extendFs: extendFs.default,
   httpRequest,
   httpRequestClient,
   httpRequestLarge,
-  httpRequestGithub,
   childPromisses,
   extendsCrypto,
   DebianPackage
 };
 
 export {
+  Ar,
   httpRequest,
   httpRequestClient,
   httpRequestLarge,
@@ -36,8 +37,7 @@ export {
   extendFs,
   DockerRegistry,
   extendsCrypto,
-  Ar,
   DebianPackage,
-  oracleBucket,
   googleDriver,
+  internalOracle as Oracle,
 };

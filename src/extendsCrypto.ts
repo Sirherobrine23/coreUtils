@@ -1,11 +1,12 @@
 import { Readable, Writable } from "node:stream";
 import crypto from "node:crypto";
+export type hashTarget = "sha512"|"sha256"|"sha1"|"md5";
 
-type hashTargets = "sha256"|"sha1"|"md5";
-
-export function createHash(target: "all"|hashTargets = "all", fn?: (Error: Error|null, hash?: {[U in hashTargets]?: string}) => void) {
+export function createHash(target: "all"|hashTarget = "all", fn?: (Error?: Error, hash?: {[U in hashTarget]?: string}) => void) {
   if (!(["all", "sha256", "sha1", "md5"]).includes(target)) target = "all";
-  const crypHash: {[U in hashTargets]?: crypto.Hash} = {};
+  const crypHash: {[U in hashTarget]?: crypto.Hash} = {};
+  // sha512
+  if ((["all", "sha512"]).includes(target)) crypHash.sha512 = crypto.createHash("sha512");
   // sha256
   if ((["all", "sha256"]).includes(target)) crypHash.sha256 = crypto.createHash("sha256");
   // sha1
@@ -18,7 +19,7 @@ export function createHash(target: "all"|hashTargets = "all", fn?: (Error: Error
       if (getError) return callback(getError);
       for (const key in crypHash) {
         try {
-          crypHash[key] = crypHash[key as hashTargets].update(chunk, encoding);
+          crypHash[key] = crypHash[key as hashTarget].update(chunk, encoding);
         } catch (err) {
           getError = err;
           if (fn) fn(err, undefined);
@@ -29,10 +30,10 @@ export function createHash(target: "all"|hashTargets = "all", fn?: (Error: Error
       callback();
     },
     final(callback) {
-      const crypDigest: {[U in hashTargets]?: string} = {};
+      const crypDigest: {[U in hashTarget]?: string} = {};
       for (const key in crypHash) {
         try {
-          crypDigest[key] = crypHash[key as hashTargets].digest("hex");
+          crypDigest[key] = crypHash[key as hashTarget].digest("hex");
         } catch (err) {
           if (fn) fn(err, undefined);
           fn = undefined;
@@ -45,7 +46,7 @@ export function createHash(target: "all"|hashTargets = "all", fn?: (Error: Error
   });
 }
 
-export async function createHashAsync(target: "all"|hashTargets = "all", stream: Readable): Promise<{[U in hashTargets]?: string}> {
+export async function createHashAsync(stream: Readable, target: "all"|hashTarget = "all"): Promise<{[U in hashTarget]?: string}> {
   return new Promise((resolve, reject) => {
     stream.pipe(createHash(target, (err, hash) => {
       if (err) return reject(err);

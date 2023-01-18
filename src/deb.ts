@@ -1,6 +1,6 @@
 import { createReadStream, createWriteStream, promises as fs, ReadStream } from "node:fs";
 import { Readable, Writable } from "node:stream";
-import { Decompressor, Compressor } from "lzma-native";
+import lzma, { Compressor } from "lzma-native";
 import { createHashAsync } from "./extendsCrypto.js";
 import * as Ar from "./ar.js";
 import extendsFs from "./extendsFs.js";
@@ -11,7 +11,7 @@ import tar from "tar";
 export type debianArch = "all"|"amd64"|"arm64"|"armel"|"armhf"|"i386"|"mips64el"|"mipsel"|"ppc64el"|"s390x";
 export type debianControl = {
   Package: string,
-  Architecture: debianArch|string,
+  Architecture: debianArch,
   Version: string,
   Priority: string,
   Maintainer?: string,
@@ -25,8 +25,9 @@ export type debianControl = {
   Filename?: string,
   Size?: number,
   MD5sum?: string,
-  SHA1?: string,
+  SHA512?: string,
   SHA256?: string,
+  SHA1?: string,
   Homepage?: string,
   Description?: string,
   Task?: string,
@@ -78,6 +79,36 @@ export function parseControl(control: Buffer) {
   return packageData as debianControl;
 }
 
+export function createControl(controlObject: debianControl) {
+  let spaceInsident = Array(2).fill("").join(" ");
+  let control: Buffer;
+  for (const keyName in controlObject) {
+    let data = controlObject[keyName];
+    // Ignore undefined and null values
+    if (data === undefined||data === null) continue;
+    let keyBuffer: Buffer;
+
+    if (keyName === "Depends" || keyName === "Suggests") {
+      keyBuffer = Buffer.from(`${keyName}: ${data}`, "utf8");
+    } else if (keyName === "Description" && typeof data === "string") {
+      const description = data.trim().split("\n").map(line => line.trim());
+      const fistDesc = description.shift();
+      const newBreakes = description.map(line => line === "" ? "." : line).map(line => `${spaceInsident}${line}`);
+      keyBuffer = Buffer.from(`${keyName}: ${fistDesc}\n${spaceInsident}${newBreakes.join("\n"+spaceInsident)}`, "utf8");
+    } else if (typeof data === "string") keyBuffer = Buffer.from(`${keyName}: ${data}`, "utf8");
+    else if (typeof data === "number") keyBuffer = Buffer.from(`${keyName}: ${data}`, "utf8");
+    else if (typeof data === "boolean") keyBuffer = Buffer.from(`${keyName}: ${data}`, "utf8");
+
+    // Add to Head
+    if (keyBuffer?.length < 0) continue;
+    if (control) control = Buffer.concat([control, Buffer.from("\n", "utf8"), keyBuffer]);
+    else control = keyBuffer;
+  }
+
+  // Add break line to end
+  return control = Buffer.concat([control, Buffer.from("\n", "utf8")]);
+}
+
 /**
  * Extract all Packages from binary file (/dists/${distribuition}/${suite}/binary-${arch}/Packages
  *
@@ -122,40 +153,36 @@ export async function parsePackages(streamRead: Readable|ReadStream) {
 /**
  *
  * @param fileStream - Debian file stream
- * @param fnControl - Callback to get control file (optional)
  * @returns control file
  */
-export async function getControl(fileStream: Readable|ReadStream, fnControl?: (control: debianControl) => void) {
+export async function getControl(fileStream: Readable|ReadStream) {
   return new Promise<debianControl>((done, reject) => {
     let fileSize = 0;
-    const fileHash = createHashAsync("all", fileStream).catch(reject);
-    fileStream.on("data", chunck => fileSize += chunck.length);
-    return fileStream.pipe(Ar.createUnpack((info, stream) => {
-      if (info.name === "debian-binary") return null;
-      if (info.name.includes("control.tar")) {
-        if (!(info.name.endsWith(".gz") || info.name.endsWith(".xz"))) return null;
-        return (info.name.endsWith(".xz")?stream.pipe(Decompressor()):stream).pipe(tar.list({
-          onentry: controlEntry => {
-            if (!controlEntry.path.endsWith("control")) return null;
-            let controlFile: Buffer;
-            return controlEntry.on("data", chunck => controlFile = (!controlFile)?chunck:Buffer.concat([controlFile, chunck])).once("end", () => {
-              const control = parseControl(controlFile);
-              return fileHash.then(hash => {
-                if (!hash) return reject(new Error("Hash not gerenate"));
-                control.MD5sum = hash.md5;
-                control.SHA1 = hash.sha1;
-                control.SHA256 = hash.sha256;
-                control.Size = fileSize;
-                if (fnControl) fnControl(control);
-                done(control);
-                return control;
-              });
-            }).on("error", reject);
-          }
-        }));
-      }
-      return null;
-    }));
+    const fileHash = createHashAsync(fileStream).catch(reject);
+    return fileStream.on("error", reject).on("data", chunck => fileSize += chunck.length).pipe(Ar.createUnpack((info, stream) => {
+      const fileBasename = path.basename(info.name).trim();
+      if (!(fileBasename.startsWith("control.tar"))) return stream.on("error", reject);
+      if (fileBasename.endsWith(".xz")) stream = stream.pipe(lzma.Decompressor());
+      else if (fileBasename.endsWith(".gz")) stream = stream.pipe(zlib.createGunzip());
+
+      // get contro file
+      let controlFile: Buffer;
+      return stream.on("error", reject).pipe(tar.list({
+        filter: (filePath) => path.basename(filePath) === "control",
+        onentry: (entry) => entry.on("data", chuck => controlFile = !controlFile ? chuck : Buffer.concat([controlFile, chuck])).on("error", reject).once("end", async () => {
+          const hashData = await fileHash;
+          if (!hashData) return reject(new Error("Cannot calculate hash"));
+          const packageControl = parseControl(controlFile);
+          controlFile = null;
+          packageControl.MD5Sum = hashData.md5;
+          packageControl.SHA512 = hashData.sha512;
+          packageControl.SHA256 = hashData.sha256;
+          packageControl.SHA1 = hashData.sha1;
+          packageControl.Size = fileSize;
+          return done(packageControl);
+        })
+      }));
+    }).on("error", reject));
   }).catch(err => {
     fileStream.destroy(err);
     throw err;
