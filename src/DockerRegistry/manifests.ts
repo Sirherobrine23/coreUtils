@@ -140,7 +140,7 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
 
   async function getTags(token?: string) {
     token = token ?? await dockerUtils.getToken(repoConfig);
-    const response = await httpRequest.getJSON<tagList>({
+    const response = await httpRequest.fetchJSON<tagList>({
       url: endpointsControl.tags.list(),
       headers: {
         ...manifestHeaders,
@@ -154,7 +154,7 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
     if (!reference) reference = (await getTags()).at(-1);
     const requestEndpoint = endpointsControl.manifest(reference);
     token = token ?? await dockerUtils.getToken(repoConfig);
-    const manifest = await httpRequest.getJSON({
+    const manifest = await httpRequest.fetchJSON({
       url: requestEndpoint,
       headers: {
         ...manifestHeaders,
@@ -174,7 +174,7 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
   async function imageManifest(reference?: string, token?: string): Promise<(dockerManifestLayer|ociManifestLayer) & {token?: string}> {
     if (!reference) reference = (await getTags()).at(-1);
     const requestEndpoint = endpointsControl.manifest(reference);
-    token = token ?? await dockerUtils.getToken(repoConfig);
+    token = token || await dockerUtils.getToken(repoConfig);
     return manifestMultiArch(reference, token).then((manifest: any) => {
       if (manifest?.mediaType === "application/vnd.docker.distribution.manifest.list.v2+json") {
         const platformsManifest = manifest as dockerManifestMultiArchPlatform;
@@ -189,7 +189,7 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
       }
       throw new Error("Manifest not found");
     }).catch(async () => {
-      const manifest = await httpRequest.getJSON({
+      const manifest = await httpRequest.fetchJSON({
         url: requestEndpoint,
         headers: {
           ...manifestHeaders,
@@ -216,7 +216,7 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
   async function blobsManifest(reference?: string) {
     const manifest = await imageManifest(reference);
     const token = await dockerUtils.getToken(repoConfig);
-    return httpRequest.getJSON<blobInfo>({
+    return httpRequest.fetchJSON<blobInfo>({
       url: endpointsControl.blob.get_delete(manifest.config.digest),
       headers: {
         ...manifestHeaders,
@@ -227,7 +227,7 @@ export async function Manifest(repo: string|dockerUtils.ImageObject, platform_ta
 
   async function blobLayerStream(digest: string, token?: string): Promise<Readable> {
     token = token ?? await dockerUtils.getToken(repoConfig);
-    return httpRequest.pipeFetch({
+    return httpRequest.streamRequest({
       url: endpointsControl.blob.get_delete(digest),
       method: "GET",
       headers: {

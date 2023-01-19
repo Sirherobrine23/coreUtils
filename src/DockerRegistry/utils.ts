@@ -10,48 +10,50 @@ export type registryInfo = {
 };
 
 export async function registryUrlInfo(registryURL: string, token?: string): Promise<registryInfo> {
-  const rootUrlHTTPS = utils.format("https://%s", registryURL);
-  const rootUrlHTTP = utils.format("http://%s", registryURL);
-
-  const tests: {[T: string]: registryInfo} = {
-    httpsv2: {
-      version: 2,
-      url: rootUrlHTTPS,
-      protocol: "https",
-      urlVersion: utils.format("%s/v2", rootUrlHTTPS)
-    },
-    httpv2: {
-      version: 2,
-      url: rootUrlHTTP,
-      protocol: "http",
-      urlVersion: utils.format("%s/v2", rootUrlHTTP)
-    },
-    httpsv1: {
-      version: 1,
-      url: rootUrlHTTPS,
-      protocol: "https",
-      urlVersion: utils.format("%s/v1", rootUrlHTTPS)
-    },
-    httpv1: {
-      version: 1,
-      url: rootUrlHTTP,
-      protocol: "http",
-      urlVersion: utils.format("%s/v1", rootUrlHTTP)
+  const arrayTest: URL[] = [];
+  const pathnames = ["/v2/", "/v1/", "/"];
+  const protocols = ["https:", "http:"];
+  for (const pathname of pathnames) {
+    for (const protocol of protocols) {
+      const urlData = new URL(`${protocol}//${registryURL}`);
+      urlData.pathname = pathname;
+      arrayTest.push(urlData);
     }
   }
 
-  for (const versionrequest of Object.keys(tests).map(T => tests[T])) {
+  for (const urlData of arrayTest) {
     try {
-      await httpRequest.bufferFetch({
-        url: versionrequest.urlVersion+"/",
-        headers: (token?{Authorization: `Bearer ${token}`}:{})
+      await httpRequest.streamRequest(urlData, {
+        headers: token ? {"Authorization": `Bearer ${token}`} : undefined,
       });
-      return versionrequest;
+      return {
+        version: urlData.pathname === "/v2/" ? 2 : 1,
+        protocol: urlData.protocol === "https:" ? "https" : "http",
+        url: urlData.origin,
+        urlVersion: urlData.toString()
+      }
     } catch (err) {
-      if (err?.data?.errors) return versionrequest;
+      if (err instanceof httpRequest.responseError) {
+        if (err.code === 404) continue;
+        else if (err.code === 401) return {
+          version: urlData.pathname === "/v2/" ? 2 : 1,
+          protocol: urlData.protocol === "https:" ? "https" : "http",
+          url: urlData.origin,
+          urlVersion: urlData.toString()
+        };
+      } else if (err instanceof httpRequest.gotRequestError) {
+        if (err.code === "ERR_GOT_REQUEST_ERROR") continue;
+        let statusCode = err.response?.statusCode;
+        if (statusCode === 404) continue;
+        else if (statusCode === 401) return {
+          version: urlData.pathname === "/v2/" ? 2 : 1,
+          protocol: urlData.protocol === "https:" ? "https" : "http",
+          url: urlData.origin,
+          urlVersion: urlData.toString().replace(/\/$/, "")
+        };
+      }
     }
   }
-
   throw new Error("cannot get version and URL check configs");
 }
 
@@ -145,10 +147,14 @@ export type requestToken = {
 
 export async function getToken(options: manifestOptions & {action?: "pull"|"push"}) {
   if (!(["pull", "push"]).includes(options.action)) options.action = "pull";
-  const request: httpRequest.requestOptions = {url: (options.authBase||options.registryBase)+"/token", query: {}};
-  if (!/http[s]:\/\//.test(request.url)) request.url = (await registryUrlInfo(options.registryBase)).url+"/token";
+  const request: httpRequest.requestOptions = {
+    url: (options.authBase||options.registryBase)+"/token",
+    query: {}
+  };
+  let urlString = request.url instanceof URL ? request.url.toString() : request.url;
+  if (!/http[s]:\/\//.test(urlString)) request.url = (await registryUrlInfo(options.registryBase)).url+"/token";
   if (typeof options.authService === "string") request.query.service = options.authService;
   request.query.scope = `repository:${options.owner}/${options.repository}:${options.action}`;
-  const data = await httpRequest.getJSON<requestToken>(request);
+  const data = await httpRequest.fetchJSON<requestToken>(request);
   return data.token;
 }

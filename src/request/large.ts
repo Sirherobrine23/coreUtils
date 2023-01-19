@@ -1,51 +1,44 @@
-import { requestOptions, pipeFetch } from "./simples.js";
-import * as extendFs from "../extendsFs.js";
-import stream from "node:stream";
-import crypto from "node:crypto";
+import { requestOptions, streamRequest } from "./simples.js";
+import { createHashAsync } from "../extendsCrypto.js";
+import extendFs from "../extendsFs.js";
 import AdmZip from "adm-zip";
 import path from "node:path";
 import tar from "tar";
 import fs from "node:fs";
 import os from "node:os";
 
-export async function saveFile(request: string|requestOptions & {filePath?: string}) {
-  if (typeof request === "string") request = {url: request};
-  const filePath = request?.filePath||path.join(os.tmpdir(), `raw_bdscore_${Date.now()}_${(path.parse(request.url||request.socket?.path||crypto.randomBytes(16).toString("hex"))).name}`);
-  await pipeFetch({...request, waitFinish: true, stream: fs.createWriteStream(filePath, {autoClose: false})});
+export async function saveFile(request: requestOptions["url"]|requestOptions & {filePath?: string}) {
+  let filePath = path.join(os.tmpdir(), "save_"+(await createHashAsync(Buffer.from(JSON.stringify(request)), "sha256")).sha256);
+  if (!(request instanceof URL||typeof request === "string")) if (await extendFs.exists(request.filePath)) filePath = request.filePath;
+  const piped = (await streamRequest(request)).pipe(fs.createWriteStream(filePath));
+  await new Promise<void>((done, reject) => piped.once("close", done).on("error", reject));
   return filePath;
 }
 
-export async function zipDownload(request: string|requestOptions) {
-  if (typeof request === "string") request = {url: request};
+export async function zipDownload(request: requestOptions["url"]|requestOptions) {
   return new AdmZip(await saveFile(request));
 }
 
-export function Tar(request: string|requestOptions) {
+export function Tar(request: requestOptions["url"]|requestOptions) {
+  async function extract(): Promise<tar.Parse>;
   async function extract(folderPath: string): Promise<string>;
-  async function extract(folderPath: string): Promise<stream.Writable>;
   async function extract(folderPath?: string) {
     if (typeof folderPath === "string") {
-      if (!await extendFs.exists(folderPath)) await fs.promises.mkdir(folderPath, {recursive: true});
-    }
-    const piped = (await pipeFetch(request)).pipe(tar.extract((typeof folderPath === "string" ? {
-      cwd: folderPath,
-      noChmod: false,
-      noMtime: false,
-      preserveOwner: true,
-      keep: true,
-      p: true
-    }:{})));
-    if (typeof folderPath === "string") {
-      await new Promise(done => piped.once("finish", done));
+      if (typeof folderPath === "string") {
+        if (!await extendFs.exists(folderPath)) await fs.promises.mkdir(folderPath, {recursive: true});
+      }
+      const stream = await streamRequest(request);
+      const piped = stream.pipe(tar.extract({cwd: folderPath}));
+      await new Promise<void>(done => piped.once("close", done));
       return folderPath;
     }
-    return piped;
+    return streamRequest(request).then(res => res.pipe(tar.list()));
   }
 
   async function listFiles(): Promise<{path: string, size: number}[]>;
   async function listFiles(callback: (data: tar.ReadEntry) => void): Promise<void>;
   async function listFiles(callback?: (data: tar.ReadEntry) => void): Promise<{path: string, size: number}[]|void> {
-    const piped = (await pipeFetch(request)).pipe(tar.list());
+    const piped = (await streamRequest(request)).pipe(tar.list());
     let files: void|{path: string, size: number}[];
     if (typeof callback === "function") piped.on("entry", entry => callback(entry));
     else {
@@ -59,11 +52,12 @@ export function Tar(request: string|requestOptions) {
     return files;
   }
 
+  const method = ((typeof request === "string"||request instanceof URL) ? "GET" : request?.method)||"GET";
   async function compress(folderPath: string) {
-    if (!((["get", "GET"]).includes((typeof request === "string" ? undefined : request?.method)||"GET"))) throw new TypeError("Compress no avaible to GET method!");
+    if ((["get", "GET"]).includes(method)) throw new TypeError("Compress no avaible to GET method!");
     if (!folderPath) throw new TypeError("Required folder!");
     if (!await extendFs.exists(folderPath)) throw new Error("Folder not exists to compress");
-    await pipeFetch({
+    await streamRequest({
       ...(request as requestOptions),
       body: tar.create({
         cwd: folderPath,
@@ -79,29 +73,16 @@ export function Tar(request: string|requestOptions) {
   };
 }
 
-export async function tarExtract(request: string|requestOptions & {folderPath?: string}) {
-  if (typeof request === "string") request = {url: request};
-  const folderToExtract = request.folderPath||path.join(os.tmpdir(), `raw_bdscore_${Date.now()}_${(path.parse(request.url||request.socket?.path||crypto.randomBytes(16).toString("hex"))).name}`);
-  await (Tar(request)).extract(folderToExtract);
-  return folderToExtract;
+export async function tarExtract(request: requestOptions["url"]|requestOptions & {folderPath?: string}) {
+  let folderPath = path.join(os.tmpdir(), "tar_extract_"+(await createHashAsync(Buffer.from(JSON.stringify(request)), "sha256")).sha256);
+  if (!(request instanceof URL||typeof request === "string")) if (await extendFs.exists(request.folderPath)) folderPath = request.folderPath;
+  return Tar(request).extract(folderPath);
 }
 
-const githubAchive = /github.com\/[\S\w]+\/[\S\w]+\/archive\//;
-export async function extractZip(request: string|requestOptions & {folderTarget?: string}) {
+export async function extractZip(request: requestOptions["url"]|requestOptions & {folderTarget?: string}) {
+  let folderPath = path.join(os.tmpdir(), "zip_ex_"+(await createHashAsync(Buffer.from(JSON.stringify(request)), "sha256")).sha256);
+  if (!(request instanceof URL||typeof request === "string")) if (await extendFs.exists(request.folderTarget)) folderPath = request.folderTarget;
   const zip = await zipDownload(request);
-  if (typeof request === "string") request = {url: request};
-  if (!request.folderTarget) request.folderTarget = await fs.promises.mkdtemp(path.join(os.tmpdir(), "bdscoreTmpExtract_"));
-  const targetFolder = githubAchive.test(request.url)?await fs.promises.mkdtemp(path.join(os.tmpdir(), "githubRoot_"), "utf8"):request.folderTarget;
-  await new Promise<void>((done, reject) => zip.extractAllToAsync(targetFolder, true, true, (err) => {
-    if (!err) return done();
-    return reject(err);
-  }));
+  await new Promise<void>((done, reject) => zip.extractAllToAsync(folderPath, true, true, err => err ? reject(err) : done()));
 
-  if (githubAchive.test(request.url)) {
-    const files = await fs.promises.readdir(targetFolder);
-    if (files.length === 0) throw new Error("Invalid extract");
-    await fs.promises.cp(path.join(targetFolder, files[0]), request.folderTarget, {recursive: true, force: true, preserveTimestamps: true, verbatimSymlinks: true});
-    return await fs.promises.rm(targetFolder, {recursive: true, force: true});
-  }
-  return;
 }

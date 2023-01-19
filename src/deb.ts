@@ -277,8 +277,11 @@ async function createDpkgAr(out: string, control: string, data: string) {
   await new Promise((done, rejects) => {
     readControl.pipe(new Writable({
       write: (chunck, _, cb) => fd.write(chunck).then(() => cb()).catch(cb),
-      destroy(error, callback) {
-        if (error) rejects(error);
+      async destroy(error, callback) {
+        if (error) {
+          await fd.close();
+          rejects(error);
+        }
         callback(error);
         setTimeout(() => done(null), 100);
       },
@@ -291,13 +294,18 @@ async function createDpkgAr(out: string, control: string, data: string) {
   await new Promise((done, rejects) => {
     readData.pipe(new Writable({
       write: (chunck, _, cb) => fd.write(chunck).then(() => cb()).catch(cb),
-      destroy(error, callback) {
-        if (error) rejects(error);
+      async destroy(error, callback) {
+        if (error) {
+          await fd.close();
+          rejects(error);
+        }
         callback(error);
         setTimeout(() => done(null), 100);
       },
     }));
   });
+
+  await fd.close();
 }
 
 export async function packDeb(options: packOptions) {
@@ -355,8 +363,7 @@ export async function packDeb(options: packOptions) {
   await createDpkgAr(options.outputFile, controlFile, dataFile);
 
   // Remove tmp folder
-  console.log(tmpFolder);
-  // await fs.rm(tmpFolder, {recursive: true, force: true});
+  await fs.rm(tmpFolder, {recursive: true, force: true});
 
   // get return
   if (options.getStream) return createReadStream(options.outputFile);

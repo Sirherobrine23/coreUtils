@@ -1,4 +1,4 @@
-import { getJSON } from "./simples.js";
+import { fetchJSON } from "./simples.js";
 
 export type testIp<protocolType extends "ipv4"|"ipv6" = "ipv4"> = {
   ip: string,
@@ -15,8 +15,8 @@ export type testIp<protocolType extends "ipv4"|"ipv6" = "ipv4"> = {
 
 export async function getExternalIP(): Promise<{ipv4?: string, ipv6?: string, rawRequest?: {ipv4?: testIp<"ipv4">, ipv6?: testIp<"ipv6">}}> {
   const [ipv6, ipv4] = await Promise.all([
-    await getJSON<testIp<"ipv6">>("https://ipv6.lookup.test-ipv6.com/ip/").catch(() => undefined),
-    await getJSON<testIp<"ipv4">>("https://ipv4.lookup.test-ipv6.com/ip/").catch(() => undefined)
+    await fetchJSON<testIp<"ipv6">>("https://ipv6.lookup.test-ipv6.com/ip/").catch(() => undefined),
+    await fetchJSON<testIp<"ipv4">>("https://ipv4.lookup.test-ipv6.com/ip/").catch(() => undefined)
   ]);
   if (!ipv4 && !ipv6) return {};
   else if (!ipv4) return {ipv6: ipv6.ip, rawRequest: {ipv6}};

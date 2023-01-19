@@ -9,12 +9,12 @@ describe("HTTP Simples Client", function() {
   this.timeout(Infinity);
   it("Get Page URLs", async () => await httpRequest.urls(simplesRequest));
   it("Get Buffer", async () => await httpRequest.bufferFetch(simplesRequest));
-  it("Get JSON", async () => await httpRequest.getJSON(simplesJson));
+  it("Get JSON", async () => await httpRequest.fetchJSON(simplesJson));
 });
 
 describe("HTTP Large files/requests", function() {
   this.timeout(Infinity);
-  it("GET Large file (pipeFetch)", async () => httpRequestLarge.saveFile(largeRequestZip));
+  it("GET Large file (streamRequest)", async () => httpRequestLarge.saveFile(largeRequestZip));
   it("Zip and Zip extract", async () => httpRequestLarge.extractZip(largeRequestZip));
   it("Tar extract", async () => httpRequestLarge.tarExtract(largeRequestTar));
 });

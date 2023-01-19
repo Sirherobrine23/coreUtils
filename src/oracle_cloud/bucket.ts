@@ -1,5 +1,5 @@
 import endpoint, {authKey, regionLocation} from "./endpoint.js";
-import { bufferFetch, getJSON, pipeFetch } from "../request/simples.js";
+import { bufferFetch, fetchJSON, streamRequest } from "../request/simples.js";
 import { Readable } from "node:stream";
 import { ReadStream } from "node:fs";
 
@@ -31,8 +31,8 @@ export default async function main(region: regionLocation, bucketName: string, b
 
   async function fileList() {
     let request: Promise<fileObject>;
-    if (typeof auth === "string") request = getJSON(`${baseURL}/o?fields=name,size,etag,timeCreated,md5,timeModified,storageTier,archivalState`);
-    else request = getJSON({
+    if (typeof auth === "string") request = fetchJSON(`${baseURL}/o?fields=name,size,etag,timeCreated,md5,timeModified,storageTier,archivalState`);
+    else request = fetchJSON({
       url: `${baseURL}/o?fields=name,size,etag,timeCreated,md5,timeModified,storageTier,archivalState`,
       headers: {}
     });
@@ -48,8 +48,8 @@ export default async function main(region: regionLocation, bucketName: string, b
   async function getFileStream(path: string) {
     if (!path.startsWith("/")) path = `/${path}`;
     if (!(await fileList()).find(file => file.name === path)) throw new Error("File not found");
-    if (typeof auth === "string") return pipeFetch(`${baseURL}/o${path}`);
-    return pipeFetch({
+    if (typeof auth === "string") return streamRequest(`${baseURL}/o${path}`);
+    return streamRequest({
       url: `${baseURL}/o${path}`,
       headers: {}
     });

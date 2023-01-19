@@ -1,4 +1,4 @@
-import { pipeFetch } from "./request/simples.js";
+import { streamRequest } from "./request/simples.js";
 import { createUnpack, createPack } from "./ar.js";
 import { extendFs } from "./index.js";
 import { createReadStream, createWriteStream } from "fs";
@@ -7,13 +7,7 @@ import { list } from "tar";
 describe("ar", function () {
   this.timeout(Infinity);
   it("Unpack", async () => {
-    if (!await extendFs.exists("examples/gh.deb")) {
-      await pipeFetch({
-        url: "https://github.com/cli/cli/releases/download/v2.20.2/gh_2.20.2_linux_386.deb",
-        waitFinish: true,
-        stream: createWriteStream("examples/gh.deb"),
-      });
-    }
+    if (!await extendFs.exists("examples/gh.deb")) await streamRequest("https://github.com/cli/cli/releases/download/v2.20.2/gh_2.20.2_linux_386.deb").then(stream => stream.pipe(createWriteStream("examples/gh.deb"))).then(stream => new Promise((done, reject) => stream.on("error", reject).once("close", done)));
     return new Promise(async (done, reject) => {
       createReadStream("examples/gh.deb").on("error", reject).on("end", done).pipe(createUnpack((info, st) => {
         if (!info.name.includes(".tar")) return st;
