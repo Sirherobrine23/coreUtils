@@ -1,16 +1,11 @@
-import gotStands, { Method, RequestError } from "got";
 export { RequestError as gotRequestError } from "got";
+import gotStands, { Method, RequestError } from "got";
 import { JSDOM } from "jsdom";
-import * as stream from "node:stream";
+import stream from "node:stream";
 
 const got = gotStands.extend({
   enableUnixSockets: true,
-  http2: true,
-  headers: {
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
-    "Accept": "*/*"
-  }
+  http2: true
 });
 
 export class responseError {
@@ -101,7 +96,7 @@ export async function streamRequest(options: requestOptions["url"]|requestOption
 export async function bufferFetch(options: requestOptions["url"]|requestOptions, extraOptions?: requestOptions) {
   if (typeof options === "string"||options instanceof URL) options = {url: options};
   const fixed = {...options, ...extraOptions};
-  if (!(fixed?.url||fixed?.socket)) throw new Error("Host blank")
+  if (!(fixed?.url)) throw new Error("Host blank")
   let urlRequest = (typeof fixed.url === "string"||fixed.url instanceof URL) ? new URL(fixed.url) : `http://unix:${fixed.socket.socketPath}:${fixed.socket.path||"/"}`;
   const method = fixed.method || "GET";
   const request = {};
@@ -137,20 +132,26 @@ export async function bufferFetch(options: requestOptions["url"]|requestOptions,
     headers: fixed.headers||{},
     method,
   }).catch(err => {try {throw new responseError(err as any)} catch {throw err}});
+  const fixedHeaders: {[headerName: string]: string[]|string} = {};
+  for (const key in response.headers) fixedHeaders[key] = response.headers[key];
   return {
     URL: new URL(response.url, response.requestUrl),
-    headers: response.headers,
-    data: response.body,
+    headers: fixedHeaders,
+    data: response.body as Buffer,
   };
 }
 
-export async function fetchJSON<T = any>(...args: Parameters<typeof streamRequest>) {
+export async function fetchJSONRaw<T = any>(...args: Parameters<typeof streamRequest>) {
   const stream = await bufferFetch(...args);
   const data = JSON.parse(stream.data.toString("utf8")) as T;
   stream.data = null;
-  return data;
+  return {...stream, data};
 }
 
+export async function fetchJSON<T = any>(...args: Parameters<typeof streamRequest>) {
+  const { data } = await fetchJSONRaw<T>(...args);
+  return data;
+}
 
 export async function jsdomFetch(options: requestOptions|string) {
   const requestResponse = await bufferFetch(options);
