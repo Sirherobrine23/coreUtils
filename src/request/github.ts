@@ -7,11 +7,11 @@ import stream from "node:stream";
 import yaml from "yaml";
 import path from "node:path";
 import fs from "node:fs/promises";
-export type githubRelease = Awaited<ReturnType<Octokit["rest"]["repos"]["listReleases"]>>["data"][number];
 export type rateLimitObject = Awaited<ReturnType<Octokit["rest"]["rateLimit"]["get"]>>["data"];
+export type githubRelease = Awaited<ReturnType<Octokit["rest"]["repos"]["listReleases"]>>["data"][number];
 export type branchInfo = Awaited<ReturnType<Octokit["rest"]["repos"]["listBranches"]>>["data"][number];
-export type braches = Awaited<ReturnType<Octokit["rest"]["repos"]["listBranchesForHeadCommit"]>>["data"];
-export type tagObject = Awaited<ReturnType<Octokit["rest"]["repos"]["listTags"]>>["data"];
+export type braches = Awaited<ReturnType<Octokit["rest"]["repos"]["listBranchesForHeadCommit"]>>["data"][number];
+export type tagObject = Awaited<ReturnType<Octokit["rest"]["repos"]["listTags"]>>["data"][number];
 
 export type githubTree = {
   sha: string,
