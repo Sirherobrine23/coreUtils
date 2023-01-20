@@ -8,6 +8,89 @@ import path from "node:path";
 import zlib from "node:zlib";
 import tar from "tar";
 
+export function parseSource(data: Buffer) {
+  const lines: Buffer[] = [];
+  for (let bufferLocate = 0; bufferLocate < data.length; bufferLocate++) {
+    if (data[bufferLocate] === 0x0A) {
+      lines.push(data.subarray(0, bufferLocate));
+      data = data.subarray(bufferLocate+1);
+      bufferLocate = 0;
+    }
+  }
+
+  function trimStar(str: Buffer) {
+    for (let i = 0; i < str.length; i++) {
+      if (str[i] === 0x20 || str[i] === 0x09) continue;
+      return str.subarray(i);
+    }
+    return str;
+  }
+
+  return lines.map((curr) => {
+    if (curr.subarray(0, 3).toString().startsWith("deb")) {
+      curr = curr.subarray(3);
+      let isSrc = false;
+      if (curr.subarray(0, 4).toString().startsWith("-src")) {
+        curr = curr.subarray(5);
+        isSrc = true;
+      }
+
+      // Trim start spaces
+      curr = trimStar(curr);
+      console.log(curr.toString());
+
+      let Options: Buffer;
+      if (curr[0] === 0x5B) {
+        for (let i = 0; i < curr.length; i++) {
+          if (curr[i] === 0x5D) {
+            Options = curr.subarray(1, i);
+            curr = trimStar(curr.subarray(i+1));
+            break;
+          } else if (curr[i] === 0x20 || curr[i] === 0x09) throw new Error("Invalid sources file, options must be in brackets \"[]\"");
+        }
+      }
+
+
+      let url: Buffer;
+      for (let space = 0; space < curr.length; space++) {
+        if (curr[space] === 0x20 || curr[space] === 0x09) {
+          url = curr.subarray(0, space);
+          curr = trimStar(curr.subarray(space));
+          break;
+        }
+      }
+      const urlMain = new URL(url.toString("utf8").trim());
+
+      // Component
+      let component: Buffer;
+      for (let space = 0; space < curr.length; space++) {
+        if (curr[space] === 0x20 || curr[space] === 0x09) {
+          component = curr.subarray(0, space);
+          curr = trimStar(curr.subarray(space));
+          break;
+        }
+      }
+
+      return {
+        type: isSrc ? "src" : "deb",
+        url: urlMain,
+        component: component.toString("utf8").trim(),
+        options: Options ? Options.toString("utf8").trim().split(/\s+/g).filter(Boolean) : [],
+        dist: curr.toString("utf8").trim().split(/\s+/g).map((curr) => {
+          const comp = curr.trim();
+          const url = new URL(urlMain);
+          url.pathname = path.join(url.pathname, component.toString().trim(), comp);
+          return {
+            name: comp,
+            url,
+          };
+        }).filter(Boolean),
+      };
+    }
+    return undefined;
+  }).filter(Boolean);
+}
+
 export type debianArch = "all"|"amd64"|"arm64"|"armel"|"armhf"|"i386"|"mips64el"|"mipsel"|"ppc64el"|"s390x";
 export type debianControl = {
   Package: string,
@@ -40,43 +123,58 @@ export type debianControl = {
  * @returns
  */
 export function parseControl(control: Buffer) {
-  if (!control) throw new Error("Control is empty");
+  if (!control) throw new TypeError("Control is empty");
   else if (!Buffer.isBuffer(control)) throw new TypeError("Control is not a buffer");
-  const packageData: {[key: string]: string} = {};
-  let key: string;
+  const packageData: {value: Buffer, data: Buffer}[] = [];
+  let oldData: typeof packageData[number];
+  let key: Buffer;
   for (let chuckLength = 0; chuckLength < control.length; chuckLength++) {
     // Get new key
     if (!key && (control[chuckLength] === 0x3A && control[chuckLength+1] !== 0x3A)) {
-      key = control.subarray(0, chuckLength).toString().trim();
+      let keyBuffer = control.subarray(control[0] === 0x0A ? 1 : 0, chuckLength);
+      // Ignore spaces
+      for (let i = 0; i < keyBuffer.length; i++) if (keyBuffer[i] === 0x20) continue;
+      key = keyBuffer;
+      keyBuffer = null;
       control = control.subarray(chuckLength+1);
       chuckLength = 0;
+      if (oldData) {
+        packageData.push(oldData);
+        oldData = null;
+      }
       continue;
     }
 
     // Add to key
     if (key) {
       if (control[chuckLength] === 0x0A) {
-        if (!packageData[key]) packageData[key] = "";
-        packageData[key] += control.subarray(0, chuckLength).toString();
-        control = control.subarray(chuckLength);
-        if (packageData[key].trim() === ".") continue;
+        if (!oldData) {
+          oldData = {
+            value: key,
+            data: control.subarray(0, chuckLength)
+          };
+          control = control.subarray(chuckLength);
+          continue;
+        }
         chuckLength = 0;
-        key = undefined;
+        key = null;
         continue;
       }
     }
   }
 
-  // Check is valid object
-  Object.keys(packageData).forEach(key => packageData[key] = packageData[key].trim());
-  if (!(packageData.Package && packageData.Architecture && packageData.Version)) {
-    const err = new Error("Invalid control file");
-    err["packageData"] = packageData;
-    throw err;
-  }
-  if (packageData.Size) packageData.Size = Number(packageData.Size) as any;
-  if (packageData["Installed-Size"]) packageData["Installed-Size"] = Number(packageData["Installed-Size"]) as any;
-  return packageData as debianControl;
+  const reduced = packageData.reduce((main, curr) => {
+    const keyName = curr.value.toString("utf8").trim();
+    const data = curr.data.toString("utf8").trim().split("\n").map(line => line.trim()).filter(Boolean).map(line => line === "." ? "" : line).join("\n");
+    curr.data = null;
+    curr.value = null;
+    if ((["Size", "Installed-Size"]).includes(keyName)) main[keyName] = Number(data);
+    else main[keyName] = data;
+    return main;
+  }, {} as Partial<debianControl>);
+
+  if (!(reduced.Package && reduced.Architecture && reduced.Version)) throw new Error("Control file is invalid");
+  return reduced as debianControl;
 }
 
 export function createControl(controlObject: debianControl) {
