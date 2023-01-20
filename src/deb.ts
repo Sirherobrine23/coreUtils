@@ -37,7 +37,6 @@ export function parseSource(data: Buffer) {
 
       // Trim start spaces
       curr = trimStar(curr);
-      console.log(curr.toString());
 
       let Options: Buffer;
       if (curr[0] === 0x5B) {
