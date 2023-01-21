@@ -3,6 +3,7 @@ import { Readable, Writable } from "node:stream";
 import lzma, { Compressor } from "lzma-native";
 import { createHashAsync } from "./extendsCrypto.js";
 import * as Ar from "./ar.js";
+import { streamRequest } from "./request/simples.js";
 import extendsFs from "./extendsFs.js";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -90,8 +91,11 @@ export function parseSource(data: Buffer) {
   }).filter(Boolean);
 }
 
-export type debianArch = "all"|"amd64"|"arm64"|"armel"|"armhf"|"i386"|"mips64el"|"mipsel"|"ppc64el"|"s390x";
+/** Debian packages, get from `dpkg-architecture --list -L | grep 'musl-linux-' | sed 's|musl-linux-||g' | xargs`, version 1.21.1, Ubuntu */
+export type debianArch = "all"|"armhf"|"i386"|"ia64"|"alpha"|"amd64"|"arc"|"armeb"|"arm"|"arm64"|"avr32"|"hppa"|"m32r"|"m68k"|"mips"|"mipsel"|"mipsr6"|"mipsr6el"|"mips64"|"mips64el"|"mips64r6"|"mips64r6el"|"nios2"|"or1k"|"powerpc"|"powerpcel"|"ppc64"|"ppc64el"|"riscv64"|"s390"|"s390x"|"sh3"|"sh3eb"|"sh4"|"sh4eb"|"sparc"|"sparc64"|"tilegx";
+
 export type debianControl = {
+  [anyKey: string]: string|number|boolean,
   Package: string,
   Architecture: debianArch,
   Version: string,
@@ -100,8 +104,8 @@ export type debianControl = {
   Section?: string,
   Origin?: string,
   "Original-Maintainer"?: string,
-  Bugs?: string,
   "Installed-Size"?: number,
+  Bugs?: string,
   Depends?: string,
   Suggests?: string,
   Filename?: string,
@@ -113,8 +117,14 @@ export type debianControl = {
   Homepage?: string,
   Description?: string,
   Task?: string,
-  [anyKey: string]: string|number|boolean
 };
+
+function findLastChar(data: Buffer) {
+  for (let i = data.length; i >= 0; i--) {
+    if (data[i] !== 0x20) return i;
+  }
+  return -1;
+}
 
 /**
  *
@@ -125,39 +135,25 @@ export function parseControl(control: Buffer) {
   if (!control) throw new TypeError("Control is empty");
   else if (!Buffer.isBuffer(control)) throw new TypeError("Control is not a buffer");
   const packageData: {value: Buffer, data: Buffer}[] = [];
-  let oldData: typeof packageData[number];
-  let key: Buffer;
+
   for (let chuckLength = 0; chuckLength < control.length; chuckLength++) {
-    // Get new key
-    if (!key && (control[chuckLength] === 0x3A && control[chuckLength+1] !== 0x3A)) {
-      let keyBuffer = control.subarray(control[0] === 0x0A ? 1 : 0, chuckLength);
-      // Ignore spaces
-      for (let i = 0; i < keyBuffer.length; i++) if (keyBuffer[i] === 0x20) continue;
-      key = keyBuffer;
-      keyBuffer = null;
+    // ':' and ' '
+    if (control[chuckLength-1] === 0x3A && control[chuckLength] === 0x20) {
+      // Find break line
+      const key = control.subarray(0, chuckLength-1);
       control = control.subarray(chuckLength+1);
       chuckLength = 0;
-      if (oldData) {
-        packageData.push(oldData);
-        oldData = null;
-      }
-      continue;
-    }
-
-    // Add to key
-    if (key) {
-      if (control[chuckLength] === 0x0A) {
-        if (!oldData) {
-          oldData = {
+      for (let breakLine = 0; breakLine < control.length; breakLine++) {
+        if (control[breakLine] === 0x0A) {
+          const data = control.subarray(0, breakLine);
+          if (data.at(findLastChar(data)) === 0x2e) continue;
+          control = control.subarray(breakLine+1);
+          packageData.push({
             value: key,
-            data: control.subarray(0, chuckLength)
-          };
-          control = control.subarray(chuckLength);
-          continue;
+            data: data,
+          });
+          break;
         }
-        chuckLength = 0;
-        key = null;
-        continue;
       }
     }
   }
@@ -172,7 +168,9 @@ export function parseControl(control: Buffer) {
     return main;
   }, {} as Partial<debianControl>);
 
+  // check required fields are present
   if (!(reduced.Package && reduced.Architecture && reduced.Version)) throw new Error("Control file is invalid");
+
   return reduced as debianControl;
 }
 
@@ -203,7 +201,7 @@ export function createControl(controlObject: debianControl) {
   }
 
   // Add break line to end
-  return control = Buffer.concat([control, Buffer.from("\n", "utf8")]);
+  return control;
 }
 
 /**
@@ -254,9 +252,8 @@ export async function parsePackages(streamRead: Readable|ReadStream) {
  */
 export async function getControl(fileStream: Readable|ReadStream) {
   return new Promise<debianControl>((done, reject) => {
-    let fileSize = 0;
     const fileHash = createHashAsync(fileStream).catch(reject);
-    return fileStream.on("error", reject).on("data", chunck => fileSize += chunck.length).pipe(Ar.createUnpack((info, stream) => {
+    return fileStream.on("error", reject).pipe(Ar.createUnpack((info, stream) => {
       const fileBasename = path.basename(info.name).trim();
       if (!(fileBasename.startsWith("control.tar"))) return stream.on("error", reject);
       if (fileBasename.endsWith(".xz")) stream = stream.pipe(lzma.Decompressor());
@@ -271,11 +268,11 @@ export async function getControl(fileStream: Readable|ReadStream) {
           if (!hashData) return reject(new Error("Cannot calculate hash"));
           const packageControl = parseControl(controlFile);
           controlFile = null;
-          packageControl.MD5Sum = hashData.md5;
-          packageControl.SHA512 = hashData.sha512;
-          packageControl.SHA256 = hashData.sha256;
-          packageControl.SHA1 = hashData.sha1;
-          packageControl.Size = fileSize;
+          packageControl.MD5Sum = hashData.hash.md5;
+          packageControl.SHA512 = hashData.hash.sha512;
+          packageControl.SHA256 = hashData.hash.sha256;
+          packageControl.SHA1 = hashData.hash.sha1;
+          packageControl.Size = hashData.dataReceived;
           return done(packageControl);
         })
       }));
@@ -297,12 +294,13 @@ export type releaseType = Partial<{
   Components: string[],
   Description: string,
   "Acquire-By-Hash": boolean,
-  SHA1: {hash: string, size: number, file: string}[],
-  SHA256: {hash: string, size: number, file: string}[],
-  SHA512: {hash: string, size: number, file: string}[],
   MD5Sum: {hash: string, size: number, file: string}[],
+  SHA512: {hash: string, size: number, file: string}[],
+  SHA256: {hash: string, size: number, file: string}[],
+  SHA1: {hash: string, size: number, file: string}[],
   Changelogs: string,
 }>;
+
 export async function parseRelease(fileData: Buffer): Promise<releaseType> {
   const releaseData: {[key: string]: any} = {};
   let latestKey: string;
@@ -347,6 +345,23 @@ export async function parseRelease(fileData: Buffer): Promise<releaseType> {
   if (releaseData.Architectures) releaseData.Architectures = releaseData.Architectures.split(" ").map(str => str.trim()).filter(Boolean);
   if (releaseData.Components) releaseData.Components = releaseData.Components.split(" ").map(str => str.trim()).filter(Boolean);
   return releaseData;
+}
+
+export async function getPackagesFromAPT(baseURL: string|URL, Release: releaseType) {
+  const packagesObj: {[component: string]: {[arch: string]: debianControl[]}} = {};
+  const {Components, Architectures} = Release;
+  for (const component of Components) {
+    for (const arch of Architectures) {
+      const baseRequest = new URL(baseURL);
+      baseRequest.pathname = path.posix.resolve(baseRequest.pathname, component, `binary-${arch}`, "Packages");
+      const packagesURLString = baseRequest.toString();
+      const stream = await streamRequest(packagesURLString).catch(() => streamRequest(packagesURLString+".gz").then(stream => stream.pipe(zlib.createGunzip()))).catch(() => streamRequest(packagesURLString+".xz").then(stream => stream.pipe(lzma.Decompressor())));
+      packagesObj[component] ??= {};
+      packagesObj[component][arch] ??= [];
+      packagesObj[component][arch] = await parsePackages(stream);
+    }
+  }
+  return packagesObj;
 }
 
 export type packOptions = {

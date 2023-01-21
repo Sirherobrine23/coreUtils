@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 
 export async function saveFile(request: requestOptions["url"]|requestOptions & {filePath?: string}) {
-  let filePath = path.join(os.tmpdir(), "save_"+(await createHashAsync(Buffer.from(JSON.stringify(request)), "sha256")).sha256);
+  let filePath = path.join(os.tmpdir(), "save_"+(await createHashAsync(Buffer.from(JSON.stringify(request)), "sha256")).hash.sha256);
   if (!(request instanceof URL||typeof request === "string")) if (await extendFs.exists(request.filePath)) filePath = request.filePath;
   const piped = (await streamRequest(request)).pipe(fs.createWriteStream(filePath));
   await new Promise<void>((done, reject) => piped.once("close", done).on("error", reject));
@@ -74,13 +74,13 @@ export function Tar(request: requestOptions["url"]|requestOptions) {
 }
 
 export async function tarExtract(request: requestOptions["url"]|requestOptions & {folderPath?: string}) {
-  let folderPath = path.join(os.tmpdir(), "tar_extract_"+(await createHashAsync(Buffer.from(JSON.stringify(request)), "sha256")).sha256);
+  let folderPath = path.join(os.tmpdir(), "tar_extract_"+(await createHashAsync(Buffer.from(JSON.stringify(request)), "sha256")).hash.sha256);
   if (!(request instanceof URL||typeof request === "string")) if (await extendFs.exists(request.folderPath)) folderPath = request.folderPath;
   return Tar(request).extract(folderPath);
 }
 
 export async function extractZip(request: requestOptions["url"]|requestOptions & {folderTarget?: string}) {
-  let folderPath = path.join(os.tmpdir(), "zip_ex_"+(await createHashAsync(Buffer.from(JSON.stringify(request)), "sha256")).sha256);
+  let folderPath = path.join(os.tmpdir(), "zip_ex_"+(await createHashAsync(Buffer.from(JSON.stringify(request)), "sha256")).hash.sha256);
   if (!(request instanceof URL||typeof request === "string")) if (await extendFs.exists(request.folderTarget)) folderPath = request.folderTarget;
   const zip = await zipDownload(request);
   await new Promise<void>((done, reject) => zip.extractAllToAsync(folderPath, true, true, err => err ? reject(err) : done()));
