@@ -175,29 +175,36 @@ export function parseControl(control: Buffer) {
 }
 
 export function createControl(controlObject: debianControl) {
-  let spaceInsident = Array(2).fill("").join(" ");
+  let spaceInsident = Array(3).join(" ");
   let control: Buffer;
   for (const keyName in controlObject) {
     let data = controlObject[keyName];
     // Ignore undefined and null values
     if (data === undefined||data === null) continue;
-    let keyBuffer: Buffer;
+    let keyString: string;
 
-    if (keyName === "Depends" || keyName === "Suggests") {
-      keyBuffer = Buffer.from(`${keyName}: ${data}`, "utf8");
-    } else if (keyName === "Description" && typeof data === "string") {
-      const description = data.trim().split("\n").map(line => line.trim());
-      const fistDesc = description.shift();
-      const newBreakes = description.map(line => line === "" ? "." : line).map(line => `${spaceInsident}${line}`);
-      keyBuffer = Buffer.from(`${keyName}: ${fistDesc}\n${spaceInsident}${newBreakes.join("\n"+spaceInsident)}`, "utf8");
-    } else if (typeof data === "string") keyBuffer = Buffer.from(`${keyName}: ${data}`, "utf8");
-    else if (typeof data === "number") keyBuffer = Buffer.from(`${keyName}: ${data}`, "utf8");
-    else if (typeof data === "boolean") keyBuffer = Buffer.from(`${keyName}: ${data}`, "utf8");
+    if (keyName === "Description") {
+      if (typeof data !== "string") throw new TypeError("Description must be a string");
+      else {
+        let dataSplit = data.split("\n").map(line => line.trim());
+        data = dataSplit.map((line, index) => {
+          if (index === 0) return line;
+          if (line.length < 1 || line === ".") return  `${spaceInsident}.`;
+          return `${spaceInsident}${line}`;
+        }).join("\n");
+      }
+    }
+
+    if (typeof data === "string") keyString = `${keyName}: ${data}`;
+    else if (typeof data === "number") keyString = `${keyName}: ${data}`;
+    else if (typeof data === "boolean") keyString = `${keyName}: ${data ? "yes" : "no"}`;
 
     // Add to Head
-    if (keyBuffer?.length < 0) continue;
-    if (control) control = Buffer.concat([control, Buffer.from("\n", "utf8"), keyBuffer]);
-    else control = keyBuffer;
+    keyString = keyString?.trim();
+    if (keyString?.length <= 0) continue;
+    if (control) control = Buffer.concat([control, Buffer.from("\n", "utf8"), Buffer.from(keyString, "utf8")]);
+    else control = Buffer.from(keyString, "utf8");
+    keyString = null;
   }
 
   // Add break line to end
