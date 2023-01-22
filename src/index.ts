@@ -10,6 +10,7 @@ import * as Ar from "./ar.js";
 import * as DebianPackage from "./deb.js";
 import * as googleDriver from "./googleDrive.js";
 import * as internalOracle from "./oracle_cloud/index.js";
+import * as Notation from "./notation.js"
 
 // Export
 export default {
@@ -24,7 +25,8 @@ export default {
   httpRequestLarge,
   childPromisses,
   extendsCrypto,
-  DebianPackage
+  DebianPackage,
+  Notation
 };
 
 export {
@@ -40,4 +42,5 @@ export {
   DebianPackage,
   googleDriver,
   internalOracle as Oracle,
+  Notation
 };
