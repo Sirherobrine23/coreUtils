@@ -30,7 +30,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "test": "tsc --build --clean && mocha src",
+    "test": "tsc --build --clean && mocha src/tests",
     "build": "tsc",
     "prepack": "npm run build"
   },
@@ -52,6 +52,8 @@
     "got": "^12.5.3",
     "jsdom": "^20.0.3",
     "lzma-native": "^8.0.6",
+    "oci-common": "^2.50.3",
+    "oci-objectstorage": "^2.50.3",
     "octokit": "^2.0.11",
     "stream-json": "^1.7.5",
     "tar": "^6.1.13",

@@ -5,14 +5,14 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Lauch API",
+      "name": "Exec current file",
       "type": "node",
       "request": "launch",
       "internalConsoleOptions": "openOnSessionStart",
       "skipFiles": ["<node_internals>/**", "node_modules/**"],
       "cwd": "${workspaceRoot}",
       "runtimeExecutable": "ts-node",
-      "args": ["src/ar_test.ts"]
+      "args": ["${file}"]
     }
   ]
 }
