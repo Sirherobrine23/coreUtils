@@ -9,4 +9,5 @@ Some of the tools are these:
 - Debian packages and Apt repository manipulation.
 - Docker registry.
 - extension to fs and crypto node module.
+- Google driver and Oracle bucket file manipulation.
 - Another utils.

@@ -9,7 +9,7 @@ import * as Docker from "./packages/docker/src/index.js";
 export default {
   Ar: Ar.default,
   http: http.default,
-  Extends,
+  Extends: Extends.default,
   parseDebianControl: Debian.default,
   Utils,
   Cloud,
