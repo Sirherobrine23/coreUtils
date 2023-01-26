@@ -3,39 +3,55 @@ import { ReadStream } from "node:fs"
 import { Readable } from "node:stream";
 import { google } from "googleapis";
 
+// Google Credential
+export type googleCredential = {
+  /**
+   * This field is only present if the access_type parameter was set to offline in the authentication request. For details, see Refresh tokens.
+   */
+  refresh_token?: string | null;
+  /**
+   * The time in ms at which this token is thought to expire.
+   */
+  expiry_date?: number | null;
+  /**
+   * A token that can be sent to a Google API.
+   */
+  access_token?: string | null;
+  /**
+   * Identifies the type of token returned. At this time, this field always has the value Bearer.
+   */
+  token_type?: string | null;
+  /**
+   * A JWT that contains identity information about the user that is digitally signed by Google.
+   */
+  id_token?: string | null;
+  /**
+   * The scopes of access granted by the access_token expressed as a list of space-delimited, case-sensitive strings.
+   */
+  scope?: string;
+};
+
+// Options object
 export type googleOptions = {
   clientID: string,
   clientSecret: string,
-  token?: string,
-  authUrl?: (err?: Error, data?: {authUrl?: string, token?: string}) => void,
+  token?: googleCredential,
+  callback?: (err?: Error, data?: {authUrl?: string, token?: Credential}) => void,
 };
-
-export default GoogleDriver;
 
 /**
  * Create client to Google Driver
  * @returns
  */
-export async function GoogleDriver(options: string|googleOptions, clientOldSecret?: string, optionsOld?: {token?: string, authCallback?: googleOptions["authUrl"]}) {
-  let clientID: string;
-  let clientSecret: string;
-  let token = optionsOld?.token;
-  let authCallback: googleOptions["authUrl"] = (...args) => console.log("Err: %s, Data: %o", ...args);
-  if (typeof options !== "string") {
-    clientID = options!.clientID;
-    clientSecret = options!.clientSecret;
-    if (options?.token) token = options.token;
-    if (options?.authUrl) authCallback = options.authUrl;
-  } else {
-    clientID = options;
-    clientSecret = clientOldSecret;
-    if (optionsOld?.token) token = optionsOld.token;
-    if (optionsOld?.authCallback) authCallback = optionsOld.authCallback;
-  }
+export async function GoogleDriver(options: googleOptions) {
+  const clientID = options.clientID;
+  const clientSecret = options.clientSecret;
+  const token = options.token;
+  const authCallback = options.callback;
 
   // Oauth2
   let auth = new google.auth.OAuth2(clientID, clientSecret);
-  if (token) auth.setCredentials({access_token: token});
+  if (token) auth.setCredentials(token);
   else {
     await new Promise<void>((done, reject) => {
       const server = createServer(async (req, res) => {
@@ -45,20 +61,17 @@ export async function GoogleDriver(options: string|googleOptions, clientOldSecre
         if (Searchs["code"]) {
           try {
             const authRes = await auth.getToken(Searchs["code"]);
-            const token = authRes.tokens.access_token;
-            await Promise.resolve(authCallback(undefined, {token}));
+            const authToken = authRes.tokens as any;
+            if (authCallback) await Promise.resolve(authCallback(undefined, {token: authToken}));
             server.close();
             done();
             res.writeHead(200, {"Content-Type": "application/json"}).write(JSON.stringify({
               Searchs,
               code: Searchs["code"],
-              auth: {
-                ...authRes.tokens,
-                expiry_date: new Date(authRes.tokens.expiry_date),
-              },
+              auth: authToken,
             }, null, 2));
           } catch (err) {
-            await Promise.resolve(authCallback(err));
+            if (authCallback) await Promise.resolve(authCallback(err));
             res.writeHead(400, {"Content-Type": "application/json"}).write(JSON.stringify({code: Searchs["code"], Searchs, err: String(err)}, null, 2));
           }
         } else res.writeHead(400, {"Content-Type": "application/json"}).write(JSON.stringify({Searchs}, null, 2));
@@ -72,10 +85,10 @@ export async function GoogleDriver(options: string|googleOptions, clientOldSecre
           access_type: "offline",
           scope: ["https://www.googleapis.com/auth/drive"],
         });
-        await Promise.resolve(authCallback(undefined, {authUrl: url}));
+        if (authCallback) await Promise.resolve(authCallback(undefined, {authUrl: url}));
       }).on("error", reject);
     }).catch(async err => {
-      await Promise.resolve(authCallback(err));
+      if (authCallback) await Promise.resolve(authCallback(err));
       throw err;
     });
   }
