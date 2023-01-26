@@ -81,7 +81,7 @@ export async function GoogleDriver(options: string|googleOptions, clientOldSecre
   }
 
   // Google Driver API
-  const { files } = google.drive({version: "v3", auth: auth});
+  const { files } = google.drive({version: "v3", auth});
 
   /**
    * Get files and folder list array from folder
@@ -91,15 +91,18 @@ export async function GoogleDriver(options: string|googleOptions, clientOldSecre
    */
   async function listFiles(folderID?: string) {
     const res = await files.list({
-      fields: 'files(id, name, size)',
+      fields: 'files(id, name, size, trashed, createdTime, modifiedTime, originalFilename)',
       q: folderID ? `'${folderID}' in parents`:undefined,
     });
     return res.data.files.map(file => ({
       id: file.id,
-      name: file.name ?? file.originalFilename,
-      size: parseInt(file.size),
+      name: String(file.name || file.originalFilename),
+      size: Number(file.size),
       isTrashedFile: file.trashed,
-      cDate: file.createdTime ? new Date(file.createdTime) : null,
+      date: {
+        create: file.createdTime ? new Date(file.createdTime) : null,
+        modified: file.modifiedTime ? new Date(file.modifiedTime) : null,
+      }
     }));
   }
 
@@ -110,9 +113,9 @@ export async function GoogleDriver(options: string|googleOptions, clientOldSecre
    * @returns
    */
   async function getFileStream(fileID_or_name: string) {
-    const file = (await listFiles()).find(({id, name}) => id === fileID_or_name || name === fileID_or_name);
-    if (!file) throw new Error("File not found");
-    return (await files.get({alt: "media", fileId: file.id}, {responseType: "stream"})).data;
+    const fileData = (await listFiles()).find(data => ([data.id, data.name]).includes(fileID_or_name));
+    if (!fileData) throw new Error("File not found");
+    return (await files.get({alt: "media", fileId: fileData.id}, {responseType: "stream"})).data;
   }
 
   async function uploadFile(fileName: string, fileStream: ReadStream|Readable, folderID?: string) {
