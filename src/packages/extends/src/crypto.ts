@@ -3,7 +3,7 @@ import stream from "node:stream";
 
 export type hashAlgorithm = "sha1"|"sha256"|"sha512"|"md5";
 export type hashObject = {
-  bytesReceived: number,
+  byteLength: number,
   hash: {
     [key in hashAlgorithm]?: string
   }
@@ -46,7 +46,7 @@ export function createHash(target?: "all"|hashAlgorithm, digestText?: crypto.Bin
   return new stream.Writable({
     final(callback) {
       const crypDigest: hashObject = {
-        bytesReceived: dataReceived,
+        byteLength: dataReceived,
         hash: {},
       };
       for (const key in crypHash) {

@@ -1,4 +1,4 @@
-import { requestOptions, streamRequest } from "./main.js";
+import { requestOptions, streamRequest, validURL } from "./main.js";
 import { createWriteStream, promises as fs } from "node:fs";
 import { extendsCrypto, extendsFS } from "../../extends/src/index.js";
 import { tmpdir } from "node:os";
@@ -7,12 +7,13 @@ import path from "node:path";
 import tar from "tar";
 
 export default saveFile;
-export async function saveFile(options: requestOptions & { path?: string}) {
-  if (!options.path) options.path = path.join(tmpdir(), (await extendsCrypto.createHashAsync(JSON.stringify(options))).hash.sha1+".tmp_request");
+export async function saveFile(options: validURL|requestOptions & { path?: string}) {
+  if (typeof options === "string"||options instanceof URL) options = {url: options};
+  const onSave = options?.path || path.join(tmpdir(), (await extendsCrypto.createHashAsync(JSON.stringify(options))).hash.sha1+".tmp_request");
   const data = await streamRequest(options);
-  await new Promise<void>((done, reject) => data.pipe(createWriteStream(options.path)).on("error", reject).once("close", done));
+  await new Promise<void>((done, reject) => data.pipe(createWriteStream(onSave)).on("error", reject).once("close", done));
   return {
-    path: options.path,
+    path: onSave,
     headers: data.headers
   };
 }

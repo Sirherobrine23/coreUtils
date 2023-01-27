@@ -30,7 +30,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "test": "tsc --build --clean && mocha src/tests",
+    "test": "tsc --build --clean && mocha src",
     "build": "tsc",
     "prepack": "npm run build"
   },

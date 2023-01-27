@@ -11,8 +11,9 @@ const got = gotMain.extend({
   http2: true,
 });
 
+export type validURL = string|URL;
 export type requestOptions = {
-  url?: string|URL,
+  url?: validURL,
   method?: Method,
   headers?: Headers,
   query?: {[key: string]: string|number|boolean},
@@ -24,10 +25,11 @@ export type requestOptions = {
  *
  * @returns stream.Readable with headers
  */
-export async function streamRequest(re: requestOptions["url"]|requestOptions, options?: Omit<requestOptions, "url">): Promise<Request & {headers: Headers}> {
+export async function streamRequest(re: validURL|requestOptions, options?: Omit<requestOptions, "url">): Promise<Request & {headers: Headers}> {
   if (!(typeof re === "string"||re instanceof URL||re?.url)) throw new TypeError("Invalid request URL");
   if (typeof re === "string"||re instanceof URL) re = { ...options, url: re };
   else re = { ...options, ...re };
+  if (!re.url) throw new TypeError("Invalid request URL");
 
   // Set Query
   if (typeof re.url === "string") if (!(re.url.startsWith("http"))) re.url = `http://${re.url}`;
@@ -37,6 +39,7 @@ export async function streamRequest(re: requestOptions["url"]|requestOptions, op
   // Make request body
   const requestBody: OptionsInit & {isStream?: true} = {
     isStream: true,
+    throwHttpErrors: true,
     headers: re.headers || {},
     method: re.method || "GET",
     encoding: "binary",
@@ -50,7 +53,7 @@ export async function streamRequest(re: requestOptions["url"]|requestOptions, op
   }
 
   const request = got.stream(URLFixed, requestBody);
-  await new Promise<void>((done, reject) => request.on("error", reject).once("response", done));
+  (await new Promise<void>((done, reject) => request.on("error", reject).on("response", done)));
   request["headers"] = {};
   const headers = request["response"]["headers"] || request["response"]["trailers"] || {};
   for (const keyName in headers) request["headers"][keyName] = headers[keyName];

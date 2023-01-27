@@ -152,7 +152,7 @@ export type releaseType = Partial<{
  * @param fileData - Buffer from Release file
  * @returns
  */
-export async function parseRelease(fileData: Buffer): Promise<releaseType> {
+export function parseRelease(fileData: Buffer): releaseType {
   const releaseData: {[key: string]: any} = {};
   let latestKey: string;
   for (let chunckLength = 0; chunckLength < fileData.length; chunckLength++) {
@@ -212,10 +212,11 @@ export async function getPackages(baseURL: string|URL, Release: releaseType) {
       const baseRequest = new URL(baseURL);
       baseRequest.pathname = path.posix.resolve(baseRequest.pathname, component, `binary-${arch}`, "Packages");
       const packagesURLString = baseRequest.toString();
-      const stream = await http.streamRequest(packagesURLString).catch(() => http.streamRequest(packagesURLString+".gz").then(stream => stream.pipe(zlib.createGunzip()))).catch(() => http.streamRequest(packagesURLString+".xz").then(stream => stream.pipe(lzma.Decompressor())));
-      packagesObj[component] ??= {};
-      packagesObj[component][arch] ??= [];
-      packagesObj[component][arch] = await parsePackages(stream);
+      await http.streamRequest(packagesURLString).catch(() => http.streamRequest(packagesURLString+".gz").then(stream => stream.pipe(zlib.createGunzip()))).catch(() => http.streamRequest(packagesURLString+".xz").then(stream => stream.pipe(lzma.Decompressor()))).then(async stream => {
+        packagesObj[component] ??= {};
+        packagesObj[component][arch] ??= [];
+        packagesObj[component][arch] = await parsePackages(stream);
+      }).catch(() => {});
     }
   }
   return packagesObj;

@@ -40,11 +40,11 @@ async function cliToken(): Promise<string|undefined> {
     try {
       const file = yaml.parse(await fs.readFile(state, "utf8"));
       if (file?.github?.token) {
-        console.warn("Github token from Github CLI");
+        // console.warn("Github token from Github CLI");
         return file.github.token;
       }
       else if (file["github.com"]?.oauth_token) {
-        console.warn("Github token from Github CLI");
+        // console.warn("Github token from Github CLI");
         return file["github.com"].oauth_token;
       }
     } catch {}
@@ -53,11 +53,11 @@ async function cliToken(): Promise<string|undefined> {
     try {
       const file = yaml.parse(await fs.readFile(state, "utf8"));
       if (file?.github?.token) {
-        console.warn("Github token from Github CLI");
+        // console.warn("Github token from Github CLI");
         return file.github.token;
       }
       else if (file["github.com"]?.oauth_token) {
-        console.warn("Github token from Github CLI");
+        // console.warn("Github token from Github CLI");
         return file["github.com"].oauth_token;
       }
     } catch {}

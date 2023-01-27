@@ -132,47 +132,58 @@ export function createControl(controlObject: debianControl) {
  * @param fileStream - Debian file stream
  * @returns control file
  */
-export async function parsePackage(fileStream: Readable): Promise<{control: debianControl, files: {path: string, size: number}[]}> {
-  const fileHash = extendsCrypto.createHashAsync(fileStream);
+export async function parsePackage(fileStream: Readable) {
   const arParse = fileStream.pipe(Ar());
-  const control = new Promise<debianControl>((done, reject) => {
-    arParse.on("entry", async (info, stream) => {
-      const fileBasename = path.basename(info.name).trim();
-      if (!(fileBasename.startsWith("control.tar"))) return stream.on("error", reject);
-      if (fileBasename.endsWith(".xz")) stream = stream.pipe(lzma.Decompressor());
-      else if (fileBasename.endsWith(".gz")) stream = stream.pipe(zlib.createGunzip());
+  const filesData: ({path: string} & ({type: "file", size: number}|{type: "folder"}))[] = [];
 
-      // control stream
-      const entry = await new Promise<tar.ReadEntry>((done, reject) => stream.pipe(tar.list({filter: (filePath) => path.basename(filePath) === "control", onentry: (entry) => done(entry)})).on("error" as any, reject));
-      let controlFile: Buffer;
-      await new Promise<void>((done, reject) => entry.on("data", chuck => controlFile = !controlFile ? chuck : Buffer.concat([controlFile, chuck])).on("error", reject).once("end", () => done()));
-      return done(parseControl(controlFile));
-    });
-  });
+  const dataPromises = await Promise.all([
+    extendsCrypto.createHashAsync(fileStream),
+    new Promise<debianControl>((done, reject) => {
+      arParse.on("entry", async (info, stream) => {
+        const fileBasename = path.basename(info.name).trim();
+        if (!(fileBasename.startsWith("control.tar"))) return stream.on("error", reject);
+        if (fileBasename.endsWith(".xz")) stream = stream.pipe(lzma.Decompressor());
+        else if (fileBasename.endsWith(".gz")) stream = stream.pipe(zlib.createGunzip());
 
-  const files = new Promise<{path: string, size: number}[]>((done, reject) => {
-    arParse.on("entry", async (info, stream) => {
-      const fileBasename = path.basename(info.name).trim();
-      if (!(fileBasename.startsWith("data.tar"))) return stream.on("error", reject);
-      if (fileBasename.endsWith(".xz")) stream = stream.pipe(lzma.Decompressor());
-      else if (fileBasename.endsWith(".gz")) stream = stream.pipe(zlib.createGunzip());
+        return stream.pipe(tar.list({
+          filter: (filePath) => path.basename(filePath) === "control",
+          onentry: (entry) => {
+          // control stream
+          let controlFile: Buffer;
+          return entry.on("data", chuck => controlFile = !controlFile ? chuck : Buffer.concat([controlFile, chuck])).on("error", reject).on("end", () => done(parseControl(controlFile)));
+        }})).on("error" as any, reject)
+      });
+    }),
+    new Promise<void>((done, reject) => {
+      arParse.on("entry", async (info, stream) => {
+        const fileBasename = path.basename(info.name).trim();
+        if (!(fileBasename.startsWith("data.tar"))) return stream.on("error", reject);
+        if (fileBasename.endsWith(".xz")) stream = stream.pipe(lzma.Decompressor());
+        else if (fileBasename.endsWith(".gz")) stream = stream.pipe(zlib.createGunzip());
+        return stream.pipe(tar.list({
+          onentry: (entry) => {
+            const fixedPath = path.posix.resolve("/", entry.path);
+            if (entry.type === "File") filesData.push({
+              type: "file",
+              path: fixedPath,
+              size: entry.size
+            }); else filesData.push({
+              type: "folder",
+              path: fixedPath
+            });
+          }
+        })).on("error" as any, reject).on("end", done);
+      });
+    }),
+  ]);
 
-      // data stream
-      const files: {path: string, size: number}[] = [];
-      await new Promise<void>((done, reject) => stream.pipe(tar.list({onentry: (entry) => files.push({path: entry.path, size: entry.size})})).on("error" as any, reject).once("end", () => done()));
-      return done(files);
-    });
-  });
-
-  // Wait datas
-  const [fileHashData, controlData, filesData ] = await Promise.all([fileHash, control, files]);
-  controlData["Size"] = fileHashData.bytesReceived;
-  controlData["MD5Sum"] = fileHashData.hash.md5;
-  controlData["SHA512"] = fileHashData.hash.sha512;
-  controlData["SHA256"] = fileHashData.hash.sha256;
-  controlData["SHA1"] = fileHashData.hash.sha1;
+  dataPromises[1]["Size"] = dataPromises[0].byteLength;
+  dataPromises[1]["MD5Sum"] = dataPromises[0].hash.md5;
+  dataPromises[1]["SHA512"] = dataPromises[0].hash.sha512;
+  dataPromises[1]["SHA256"] = dataPromises[0].hash.sha256;
+  dataPromises[1]["SHA1"] = dataPromises[0].hash.sha1;
   return {
-    control: controlData,
+    control: dataPromises[1],
     files: filesData
   };
 }

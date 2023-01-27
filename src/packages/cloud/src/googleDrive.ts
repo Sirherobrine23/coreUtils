@@ -36,7 +36,7 @@ export type googleOptions = {
   clientID: string,
   clientSecret: string,
   token?: googleCredential,
-  callback?: (err?: Error, data?: {authUrl?: string, token?: Credential}) => void,
+  callback?: (err?: Error, data?: {authUrl?: string, token?: googleOptions["token"]}) => void,
 };
 
 /**
@@ -61,7 +61,8 @@ export async function GoogleDriver(options: googleOptions) {
         if (Searchs["code"]) {
           try {
             const authRes = await auth.getToken(Searchs["code"]);
-            const authToken = authRes.tokens as any;
+            const authToken: googleCredential = authRes.tokens as any;
+            auth.setCredentials(authToken);
             if (authCallback) await Promise.resolve(authCallback(undefined, {token: authToken}));
             server.close();
             done();
