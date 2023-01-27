@@ -123,13 +123,12 @@ export async function GoogleDriver(options: googleOptions) {
   /**
    * Get file stream
    *
-   * @param fileID_or_name - Name or ID of the file
+   * @param fileID - ID of the file
    * @returns
    */
-  async function getFileStream(fileID_or_name: string) {
-    const fileData = (await listFiles()).find(data => ([data.id, data.name]).includes(fileID_or_name));
-    if (!fileData) throw new Error("File not found");
-    return (await files.get({alt: "media", fileId: fileData.id}, {responseType: "stream"})).data;
+  async function getFileStream(fileID: string) {
+    // not check to get file ID
+    return (await files.get({alt: "media", fileId: fileID}, {responseType: "stream"})).data;
   }
 
   async function uploadFile(fileName: string, fileStream: ReadStream|Readable, folderID?: string) {
