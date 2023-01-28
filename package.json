@@ -17,7 +17,11 @@
     "http",
     "got",
     "jsdom",
-    "proprieties"
+    "ar",
+    "docker_registry",
+    "google_driver",
+    "oracle_bucket",
+    "node_modules_extensions"
   ],
   "bugs": {
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"

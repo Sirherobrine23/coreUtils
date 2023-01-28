@@ -68,6 +68,7 @@ jobs:
       name: Create Pull Request
       continue-on-error: true
       with:
+        token: "${{ secrets.GITHUB_TOKEN }}"
         commit-message: Update version v${{ env.PACKAGE_VERSION }}
         branch: update-version
         title: Update package version v${{ env.PACKAGE_VERSION }}

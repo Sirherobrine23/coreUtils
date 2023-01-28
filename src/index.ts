@@ -7,10 +7,12 @@ import * as Cloud from "./packages/cloud/src/index.js";
 import * as Docker from "./packages/docker/src/index.js";
 
 export default {
-  Ar: Ar.default,
-  http: http.default,
-  Extends: Extends.default,
-  parseDebianControl: Debian.default,
+  Ar,
+  http,
+  Extends,
+  extendsFS: Extends.extendsFS,
+  extendsCryto: Extends.extendsCrypto,
+  Debian,
   Utils,
   Cloud,
   Docker
