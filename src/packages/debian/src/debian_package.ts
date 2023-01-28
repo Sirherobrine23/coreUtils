@@ -5,6 +5,7 @@ import lzma from "lzma-native";
 import path from "node:path";
 import zlib from "node:zlib";
 import tar from "tar";
+import bzip2 from "unbzip2-stream";
 
 /** Debian packages, get from `dpkg-architecture --list -L | grep 'musl-linux-' | sed 's|musl-linux-||g' | xargs`, version 1.21.1, Ubuntu */
 export type debianArch = "all"|"armhf"|"i386"|"ia64"|"alpha"|"amd64"|"arc"|"armeb"|"arm"|"arm64"|"avr32"|"hppa"|"m32r"|"m68k"|"mips"|"mipsel"|"mipsr6"|"mipsr6el"|"mips64"|"mips64el"|"mips64r6"|"mips64r6el"|"nios2"|"or1k"|"powerpc"|"powerpcel"|"ppc64"|"ppc64el"|"riscv64"|"s390"|"s390x"|"sh3"|"sh3eb"|"sh4"|"sh4eb"|"sparc"|"sparc64"|"tilegx";
@@ -35,9 +36,7 @@ export type debianControl = {
 };
 
 function findLastChar(data: Buffer) {
-  for (let i = data.length; i >= 0; i--) {
-    if (data[i] !== 0x20) return i;
-  }
+  for (let i = data.length; i >= 0; i--) if (data[i] !== 0x20) return i;
   return -1;
 }
 
@@ -110,9 +109,9 @@ export function createControl(controlObject: debianControl) {
       }
     }
 
-    if (typeof data === "string") keyString = `${keyName}: ${data}`;
-    else if (typeof data === "number") keyString = `${keyName}: ${data}`;
+    if (typeof data === "number") keyString = `${keyName}: ${data}`;
     else if (typeof data === "boolean") keyString = `${keyName}: ${data ? "yes" : "no"}`;
+    else keyString = `${keyName}: ${String(data)}`;
 
     // Add to Head
     keyString = keyString?.trim();
@@ -139,12 +138,14 @@ export async function parsePackage(fileStream: Readable) {
   const dataPromises = await Promise.all([
     extendsCrypto.createHashAsync(fileStream),
     new Promise<debianControl>((done, reject) => {
-      arParse.on("entry", async (info, stream) => {
+      let loaded = false;
+      arParse.once("close", () => {if(!loaded) return reject(new Error("Invalid debian package"))}).on("entry", async (info, stream) => {
         const fileBasename = path.basename(info.name).trim();
         if (!(fileBasename.startsWith("control.tar"))) return stream.on("error", reject);
         if (fileBasename.endsWith(".xz")) stream = stream.pipe(lzma.Decompressor());
         else if (fileBasename.endsWith(".gz")) stream = stream.pipe(zlib.createGunzip());
-
+        else if (fileBasename.endsWith(".zst")) throw new Error("Facebook zst not supported to extract data");
+        loaded = true;
         return stream.pipe(tar.list({
           filter: (filePath) => path.basename(filePath) === "control",
           onentry: (entry) => {
@@ -155,11 +156,15 @@ export async function parsePackage(fileStream: Readable) {
       });
     }),
     new Promise<void>((done, reject) => {
-      arParse.on("entry", async (info, stream) => {
+      let loaded = false;
+      arParse.once("close", () => {if (!loaded) return reject(new Error("Invalid debian package"))}).on("entry", async (info, stream) => {
         const fileBasename = path.basename(info.name).trim();
         if (!(fileBasename.startsWith("data.tar"))) return stream.on("error", reject);
-        if (fileBasename.endsWith(".xz")) stream = stream.pipe(lzma.Decompressor());
-        else if (fileBasename.endsWith(".gz")) stream = stream.pipe(zlib.createGunzip());
+        if (fileBasename.endsWith(".gz")) stream = stream.pipe(zlib.createGunzip());
+        else if (fileBasename.endsWith(".bz2")) stream = stream.pipe(bzip2());
+        else if (fileBasename.endsWith(".xz")||fileBasename.endsWith(".lzma")) stream = stream.pipe(lzma.Decompressor());
+        else if (fileBasename.endsWith(".zst")) throw new Error("Facebook zst not supported to extract data");
+        loaded = true;
         return stream.pipe(tar.list({
           onentry: (entry) => {
             const fixedPath = path.posix.resolve("/", entry.path);

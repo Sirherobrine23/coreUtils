@@ -43,6 +43,7 @@ export function createHead(filename: string, info: {mode?: "100644", mtime?: Dat
   return controlHead;
 }
 
+export default parse;
 /**
  * Parse ar file and return file stream on entry event
 *
