@@ -58,7 +58,7 @@
     "cloudflare": "^2.9.1",
     "googleapis": "^110.0.0",
     "got": "^12.5.3",
-    "jsdom": "^20.0.3",
+    "jsdom": "^21.1.0",
     "lzma-native": "^8.0.6",
     "oci-common": "^2.50.3",
     "oci-objectstorage": "^2.50.3",
