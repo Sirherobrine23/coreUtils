@@ -1,0 +1,29 @@
+name: Publish packages
+on:
+  release:
+    types:
+      - prereleased
+      - released
+
+jobs:
+  publish-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        name: Checkout
+
+      - uses: actions/setup-node@v3
+        name: Setup Node.js
+        with:
+          node-version: latest
+
+      - name: Install dependencies
+        run: npm install --no-save
+
+      - name: Edit version
+        run: node scripts/updateVersion.mjs ${{ github.event.release.tag_name }} --env_file=$GITHUB_ENV
+
+      - name: Publish package
+        run: npm publish --workspaces --access public --tag ${{ github.event.release.prerelease && 'next' || 'latest' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

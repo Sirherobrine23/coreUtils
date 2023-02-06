@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/coreutils",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "This is a simple project to bring together and facilitate some simple resources from the world of Nodejs and Typescript.",
   "type": "module",
   "main": "src/index.js",
