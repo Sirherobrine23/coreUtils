@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "references": [
+    {"path": "../ar"},
+    {"path": "../cloud"},
+    {"path": "../debian"},
+    {"path": "../docker"},
+    {"path": "../extends"},
+    {"path": "../http"},
+    {"path": "../utils"},
+  ]
+}

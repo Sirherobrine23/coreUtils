@@ -1,0 +1,38 @@
+{
+  "name": "@sirherobrine23/debian",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
+  },
+  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
+  "bugs": {
+    "url": "https://github.com/Sirherobrine23/coreUtils/issues"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
+  "license": "GPL-2.0",
+  "workspaces": [
+    "../http",
+    "../ar",
+    "../extends"
+  ],
+  "dependencies": {
+    "@sirherobrine23/http": "*",
+    "@sirherobrine23/ar": "*",
+    "@sirherobrine23/extends": "*",
+    "lzma-native": "^8.0.6",
+    "unbzip2-stream": "^1.4.3"
+  },
+  "devDependencies": {
+    "@types/lzma-native": "^4.0.1",
+    "@types/unbzip2-stream": "^1.4.0"
+  }
+}

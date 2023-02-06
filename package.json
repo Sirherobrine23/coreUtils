@@ -1,71 +1,21 @@
 {
-  "name": "@sirherobrine23/coreutils",
-  "version": "2.0.0-rc1",
-  "description": "extensions and utilities to share with various projects",
-  "private": false,
-  "type": "module",
-  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
-  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
-  "license": "GPL-2.0",
-  "main": "src/index.js",
-  "types": "./src/index.d.ts",
+  "name": "coreutils",
+  "version": "1.0.0",
+  "private": true,
+  "description": "This is a simple project to bring together and facilitate some simple resources from the world of Nodejs and Typescript.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
   },
-  "keywords": [
-    "http",
-    "got",
-    "jsdom",
-    "ar",
-    "docker_registry",
-    "google_driver",
-    "oracle_bucket",
-    "node_modules_extensions"
-  ],
+  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
   "bugs": {
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
   },
-  "sponsor": {
-    "url": "https://github.com/sponsors/Sirherobrine23"
-  },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org"
-  },
-  "scripts": {
-    "test": "tsc --build --clean && mocha src",
-    "build": "tsc",
-    "prepack": "npm run build"
-  },
+  "workspaces": [
+    "packages/*"
+  ],
   "devDependencies": {
-    "@types/adm-zip": "^0.5.0",
-    "@types/cloudflare": "^2.7.9",
-    "@types/jsdom": "^20.0.1",
-    "@types/lzma-native": "^4.0.1",
-    "@types/mocha": "^10.0.1",
-    "@types/node": "^18.11.18",
-    "@types/stream-json": "^1.7.3",
-    "@types/tar": "^6.1.3",
-    "@types/unbzip2-stream": "^1.4.0",
-    "mocha": "^10.2.0",
-    "ts-node": "^10.9.1",
+    "@types/node": "^18.11.19",
     "typescript": "^4.9.5"
-  },
-  "dependencies": {
-    "acme-client": "^5.0.0",
-    "adm-zip": "^0.5.10",
-    "cloudflare": "^2.9.1",
-    "googleapis": "^110.0.0",
-    "got": "^12.5.3",
-    "jsdom": "^21.1.0",
-    "lzma-native": "^8.0.6",
-    "oci-common": "^2.50.3",
-    "oci-objectstorage": "^2.50.3",
-    "octokit": "^2.0.14",
-    "stream-json": "^1.7.5",
-    "tar": "^6.1.13",
-    "unbzip2-stream": "^1.4.3",
-    "yaml": "^2.2.1"
   }
 }

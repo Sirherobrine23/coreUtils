@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "esModuleInterop": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ESNext",
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "strict": false,
+    "noUnusedLocals": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "lib": [
+      "ESNext"
+    ]
+  },
+  "exclude": [
+    "**/*.test.ts"
+  ],
+  "ts-node": {
+    "esm": true
+  }
+}
