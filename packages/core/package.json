@@ -31,11 +31,11 @@
   ],
   "dependencies": {
     "@sirherobrine23/ar": "3.0.6",
+    "@sirherobrine23/basic_utils": "3.0.6",
     "@sirherobrine23/cloud": "3.0.6",
     "@sirherobrine23/debian": "3.0.6",
-    "@sirherobrine23/docker": "*",
+    "@sirherobrine23/docker-registry": "^3.0.6",
     "@sirherobrine23/extends": "3.0.6",
-    "@sirherobrine23/http": "3.0.6",
-    "@sirherobrine23/basic_utils": "3.0.6"
+    "@sirherobrine23/http": "3.0.6"
   }
 }

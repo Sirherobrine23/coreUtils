@@ -26,9 +26,9 @@
     "../extends"
   ],
   "dependencies": {
-    "@sirherobrine23/http": "3.0.6",
     "@sirherobrine23/ar": "3.0.6",
     "@sirherobrine23/extends": "3.0.6",
+    "@sirherobrine23/http": "3.0.6",
     "lzma-native": "^8.0.6",
     "unbzip2-stream": "^1.4.3"
   },
