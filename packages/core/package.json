@@ -1,0 +1,41 @@
+{
+  "name": "@sirherobrine23/coreutils",
+  "version": "3.4.0",
+  "description": "This is a simple project to bring together and facilitate some simple resources from the world of Nodejs and Typescript.",
+  "type": "module",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
+  },
+  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
+  "bugs": {
+    "url": "https://github.com/Sirherobrine23/coreUtils/issues"
+  },
+  "scripts": {
+    "clean": "tsc --build --clean",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
+  "license": "GPL-2.0",
+  "workspaces": [
+    "../ar",
+    "../cloud",
+    "../debian",
+    "../docker",
+    "../extends",
+    "../http",
+    "../util"
+  ],
+  "dependencies": {
+    "@sirherobrine23/ar": "*",
+    "@sirherobrine23/cloud": "*",
+    "@sirherobrine23/debian": "*",
+    "@sirherobrine23/docker": "*",
+    "@sirherobrine23/extends": "*",
+    "@sirherobrine23/http": "*",
+    "@sirherobrine23/basic_utils": "*"
+  }
+}

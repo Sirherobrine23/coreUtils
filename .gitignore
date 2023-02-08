@@ -10,5 +10,5 @@ examples/souces/
 *.a
 
 # Typescript
-src/**/*.d.ts
-src/**/*.js
+packages/**/src/**/*.d.ts
+packages/**/src/**/*.js

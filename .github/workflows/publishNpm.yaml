@@ -1,0 +1,54 @@
+name: Publish packages
+on:
+  release:
+    types:
+      - prereleased
+      - released
+
+jobs:
+  publish-package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v2
+        name: Checkout
+
+      - uses: actions/setup-node@v3
+        name: Setup Node.js
+        with:
+          node-version: latest
+
+      - name: Install dependencies
+        run: npm install --no-save
+
+      - name: Edit version
+        run: npm run update_version -- ${{ github.event.release.tag_name }} --env_file=$GITHUB_ENV
+
+      - name: Build package
+        run: npm run build
+
+      - name: Publish package
+        run: npm publish --workspaces --access public --tag ${{ github.event.release.prerelease && 'next' || 'latest' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Pack package
+        run: npm pack --workspaces
+
+      - name: Upload package
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ github.event.release.tag_name }}
+          path: sirherobrine23-*.tgz
+
+      - name: Upload to release
+        continue-on-error: true
+        uses: svenstaro/upload-release-action@v2
+        with:
+          overwrite: true
+          file: sirherobrine23-*.tgz
+          asset_name: ${{ github.event.release.tag_name }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.event.release.tag_name }}
