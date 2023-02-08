@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/cloud",
-  "version": "3.4.0",
+  "version": "3.0.6",
   "description": "",
   "type": "module",
   "main": "src/index.js",

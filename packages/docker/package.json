@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/docker-registry",
-  "version": "3.4.0",
+  "version": "3.0.6",
   "description": "",
   "type": "module",
   "main": "src/index.js",
@@ -24,6 +24,6 @@
     "../http"
   ],
   "dependencies": {
-    "@sirherobrine23/http": "*"
+    "@sirherobrine23/http": "3.0.6"
   }
 }

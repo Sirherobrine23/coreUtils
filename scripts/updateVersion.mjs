@@ -1,8 +1,8 @@
 #!/usr/bin/env ts-node
-import { appendFile, readdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import path from "node:path";
 import semver from "semver";
+import path from "node:path";
+import fs from "node:fs/promises";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../packages");
 
@@ -14,14 +14,15 @@ if (!version) {
   process.exit(1);
 }
 
-for (const pkg of await readdir(root)) {
-  const packageJSON = JSON.parse((await readFile(path.resolve(root, pkg, "package.json"))).toString());
-  console.log(`Updating ${packageJSON.name}/${packageJSON.version} to ${version}`);
-  packageJSON.version = version;
-  await writeFile(path.resolve(root, pkg, "package.json"), JSON.stringify(packageJSON, null, 2));
-}
+let packagesData = await Promise.all((await fs.readdir(root)).map(async packageName => ({path: path.join(root, packageName, "package.json"), data: JSON.parse(await fs.readFile(path.join(root, packageName, "package.json"), "utf8"))})));
+packagesData = packagesData.map(conf => {
+  console.log(`Updating ${conf.data.name} to ${version}`);
+  conf.data.version = version;
+  if (conf.data.dependencies) for (const dep in conf.data.dependencies) if (packagesData.find(p => p.data.name === dep)) {
+    console.log(`\tUpdating dependency ${dep} to ${version}`);
+    conf.data.dependencies[dep] = version;
+  }
+  return conf;
+});
 
-const envFile = (process.argv.find((arg) => arg.startsWith("--env_file="))?.replace("--env_file=", "") || "").trim();
-if (envFile) {
-  appendFile(envFile, `\nVERSION=${version}`);
-}
+await Promise.all(packagesData.map(({path, data}) => fs.writeFile(path, JSON.stringify(data, null, 2))));

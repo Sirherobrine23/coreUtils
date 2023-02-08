@@ -18,6 +18,7 @@ jobs:
       - uses: actions/setup-node@v3
         name: Setup Node.js
         with:
+          registry-url: https://registry.npmjs.org/
           node-version: latest
 
       - name: Install dependencies

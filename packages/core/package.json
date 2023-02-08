@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/coreutils",
-  "version": "3.4.0",
+  "version": "3.0.6",
   "description": "This is a simple project to bring together and facilitate some simple resources from the world of Nodejs and Typescript.",
   "type": "module",
   "main": "src/index.js",
@@ -30,12 +30,12 @@
     "../util"
   ],
   "dependencies": {
-    "@sirherobrine23/ar": "*",
-    "@sirherobrine23/cloud": "*",
-    "@sirherobrine23/debian": "*",
+    "@sirherobrine23/ar": "3.0.6",
+    "@sirherobrine23/cloud": "3.0.6",
+    "@sirherobrine23/debian": "3.0.6",
     "@sirherobrine23/docker": "*",
-    "@sirherobrine23/extends": "*",
-    "@sirherobrine23/http": "*",
-    "@sirherobrine23/basic_utils": "*"
+    "@sirherobrine23/extends": "3.0.6",
+    "@sirherobrine23/http": "3.0.6",
+    "@sirherobrine23/basic_utils": "3.0.6"
   }
 }
