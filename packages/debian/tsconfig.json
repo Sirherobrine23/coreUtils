@@ -1,8 +1,3 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "references": [
-    {"path": "../http"},
-    {"path": "../ar"},
-    {"path": "../extends"}
-  ]
+  "extends": "../../tsconfig.base.json"
 }

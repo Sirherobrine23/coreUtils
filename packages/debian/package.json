@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/debian",
-  "version": "3.1.0",
+  "version": "3.4.0",
   "description": "",
   "type": "module",
   "main": "src/index.js",
@@ -14,7 +14,8 @@
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "clean": "tsc --build --clean",
+    "build": "tsc"
   },
   "keywords": [],
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",

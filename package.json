@@ -14,6 +14,11 @@
   "workspaces": [
     "packages/*"
   ],
+  "scripts": {
+    "build": "node scripts/transpiler.mjs",
+    "clean": "npm run --workspaces clean --if-present",
+    "update_version": "node scripts/updateVersion.mjs"
+  },
   "devDependencies": {
     "@types/node": "^18.11.19",
     "@types/semver": "^7.3.13",
