@@ -38,7 +38,7 @@ jobs:
         run: npm pack --workspaces
 
       - name: Upload package
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ github.event.release.tag_name }}
           path: sirherobrine23-*.tgz
