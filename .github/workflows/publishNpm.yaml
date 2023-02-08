@@ -12,7 +12,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         name: Checkout
 
       - uses: actions/setup-node@v3
@@ -38,7 +38,7 @@ jobs:
         run: npm pack --workspaces
 
       - name: Upload package
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ github.event.release.tag_name }}
           path: sirherobrine23-*.tgz
