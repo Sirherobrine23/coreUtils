@@ -35,7 +35,7 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
 
   // Set Query
   if (typeof re.url === "string") if (!(re.url.startsWith("http"))) re.url = `http://${re.url}`;
-  const URLFixed = new URL(re.url);
+  const URLFixed = new URL(String(re.url));
   if (re.query) for (const key in re.query) URLFixed.searchParams.set(key, String(re.query[key]));
 
   // Make request body
