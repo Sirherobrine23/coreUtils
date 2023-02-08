@@ -55,7 +55,7 @@ export function parseSource(data: Buffer) {
           break;
         }
       }
-      const urlMain = new URL(url.toString("utf8").trim());
+      const urlMain = new URL(String(url.toString("utf8").trim()));
 
       // Component
       let component: Buffer;
@@ -74,7 +74,7 @@ export function parseSource(data: Buffer) {
         options: Options ? Options.toString("utf8").trim().split(/\s+/g).filter(Boolean) : [],
         dist: curr.toString("utf8").trim().split(/\s+/g).map((curr) => {
           const comp = curr.trim();
-          const url = new URL(urlMain);
+          const url = new URL(String(urlMain));
           url.pathname = path.join(url.pathname, component.toString().trim(), comp);
           return {
             name: comp,
@@ -209,7 +209,7 @@ export async function getPackages(baseURL: string|URL, Release: releaseType) {
   const {Components, Architectures} = Release;
   for (const component of Components) {
     for (const arch of Architectures) {
-      const baseRequest = new URL(baseURL);
+      const baseRequest = new URL(String(baseURL));
       baseRequest.pathname = path.posix.resolve(baseRequest.pathname, component, `binary-${arch}`, "Packages");
       const packagesURLString = baseRequest.toString();
       await http.streamRequest(packagesURLString).catch(() => http.streamRequest(packagesURLString+".gz").then(stream => stream.pipe(zlib.createGunzip()))).catch(() => http.streamRequest(packagesURLString+".xz").then(stream => stream.pipe(lzma.Decompressor()))).then(async stream => {

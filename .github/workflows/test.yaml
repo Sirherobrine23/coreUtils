@@ -22,5 +22,8 @@ jobs:
       - name: Install dependencies
         run: npm install --no-save
 
+      - name: Build packages
+        run: npm run build
+
       - name: Run tests
         run: npm run --workspaces --if-present test

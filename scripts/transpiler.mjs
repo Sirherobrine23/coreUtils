@@ -34,7 +34,6 @@ for (const packageInfo of packages) {
     });
   } catch (err) {
     console.log(`Failed to build ${packageInfo.data.name}`);
-    process.stderr.write(err.stderr);
-    process.stdout.write(err.stdout);
+    process.exit(1);
   }
 }

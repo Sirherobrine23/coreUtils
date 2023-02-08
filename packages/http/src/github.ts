@@ -133,7 +133,7 @@ export async function GithubManeger(owner: string, repository: string, token: st
    * @returns
    */
   async function branchList() {
-    const url = new URL(baseRepos);
+    const url = new URL(String(baseRepos));
     url.pathname = path.posix.join(url.pathname, "branches");
     const branchList: braches[] = [];
     let etag: string;
@@ -168,20 +168,20 @@ export async function GithubManeger(owner: string, repository: string, token: st
    * @returns
    */
   async function getBranchInfo(branch: string) {
-    const url = new URL(baseRepos);
+    const url = new URL(String(baseRepos));
     url.pathname = path.posix.join(url.pathname, "branches", branch);
     return jsonRequest<branchInfo>(url, {headers: token?{Authorization: `token ${token}`}:{}});
   }
 
   async function trees(tree: string) {
-    const requestURL = new URL(baseRepos);
+    const requestURL = new URL(String(baseRepos));
     requestURL.pathname = path.posix.join(requestURL.pathname, "git", "trees", tree);
     requestURL.searchParams.set("recursive", "true");
     return jsonRequest<githubTree>(requestURL, {headers: token?{Authorization: `token ${token}`}:{}}).catch(() => null);
   }
 
   async function tags() {
-    const requestURL = new URL(baseRepos);
+    const requestURL = new URL(String(baseRepos));
     requestURL.pathname = path.posix.join(requestURL.pathname, "tags");
     const tags: tagObject[] = [];
     let etag: string;
@@ -220,7 +220,7 @@ export async function GithubManeger(owner: string, repository: string, token: st
    */
   async function getRelease(releaseTag: string|boolean): Promise<githubRelease>;
   async function getRelease(releaseTag?: string|boolean): Promise<githubRelease|githubRelease[]> {
-    const requestURL = new URL(baseRepos);
+    const requestURL = new URL(String(baseRepos));
     requestURL.pathname = path.posix.join(requestURL.pathname, "releases");
     if (typeof releaseTag === "string"||typeof releaseTag === "boolean") {
       if (typeof releaseTag === "boolean") requestURL.pathname = path.posix.join(requestURL.pathname, "latest");
@@ -258,7 +258,7 @@ export async function GithubManeger(owner: string, repository: string, token: st
             if (rel.startsWith('"') && rel.endsWith('"')) rel = rel.slice(1, -1);
             return {
               rel,
-              url: new URL(url),
+              url: new URL(String(url)),
             };
           });
           const nextUrl = linkData.find(i => i.rel === "next");
