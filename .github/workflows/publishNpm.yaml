@@ -8,9 +8,7 @@ on:
 jobs:
   publish-package:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
+    permissions: write-all
     steps:
       - uses: actions/checkout@v3
         name: Checkout
@@ -46,10 +44,21 @@ jobs:
 
       - name: Upload to release
         continue-on-error: true
-        uses: svenstaro/upload-release-action@v2
+        uses: softprops/action-gh-release@v1
         with:
-          overwrite: true
-          file: sirherobrine23-*.tgz
-          asset_name: ${{ github.event.release.tag_name }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ github.event.release.tag_name }}
+          draft: false
+          prerelease: ${{ github.event.release.prerelease }}
+          tag_name: ${{ github.event.release.tag_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ github.event.release.name }}
+          body: ${{ github.event.release.body }}
+          files: sirherobrine23-*.tgz
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: Update version
+          title: Update version
+          body: Update version
+          branch: update-version

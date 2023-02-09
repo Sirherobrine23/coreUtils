@@ -1,6 +1,9 @@
 import * as ociBucket from "oci-objectstorage";
 import * as ociAuth from "oci-common";
+import * as coreHttp from "@sirherobrine23/http";
 import stream from "node:stream";
+import utils from "node:util";
+
 export type oracleRegions = "af-johannesburg-1"|"ap-chuncheon-1"|"ap-hyderabad-1"|"ap-melbourne-1"|"ap-mumbai-1"|"ap-osaka-1"|"ap-seoul-1"|"ap-singapore-1"|"ap-sydney-1"|"ap-tokyo-1"|"ca-montreal-1"|"ca-toronto-1"|"eu-amsterdam-1"|"eu-frankfurt-1"|"eu-madrid-1"|"eu-marseille-1"|"eu-milan-1"|"eu-paris-1"|"eu-stockholm-1"|"eu-zurich-1"|"il-jerusalem-1"|"me-abudhabi-1"|"me-jeddah-1"|"mx-queretaro-1"|"sa-santiago-1"|"sa-saopaulo-1"|"sa-vinhedo-1"|"uk-cardiff-1"|"uk-london-1"|"us-ashburn-1"|"us-chicago-1"|"us-phoenix-1"|"us-sanjose-1";
 export type oracleOptions = {
   region: oracleRegions,
@@ -16,7 +19,6 @@ export type oracleOptions = {
   }|{
     type: "preAuthentication",
     PreAuthenticatedKey: string,
-    name: string,
   }
 }
 
@@ -54,15 +56,136 @@ function getRegion(region: oracleRegions) {
   else if (region === "us-phoenix-1") return ociAuth.Region.US_PHOENIX_1;
   else if (region === "us-chicago-1") return ociAuth.Region.US_CHICAGO_1;
   else if (region === "us-ashburn-1") return ociAuth.Region.US_ASHBURN_1;
-  else throw new Error("Invalid region");
+  else throw new Error("Invalid Oracle Cloud region");
+}
+
+function checkFileName(name: string) {
+  if (!name) throw new Error("File name is required");
+  else if (typeof name !== "string") throw new Error("File name must be a string");
+  else if (name.length > 1024) throw new Error("File name must be less than 1024 characters");
+  else if (name.length < 1) throw new Error("File name must be at least 1 character");
+  return name;
 }
 
 /**
  * Create object with functions to manage files in Oracle cloud bucket
  */
 export async function oracleBucket(config: oracleOptions) {
+  if (config.auth.type === "preAuthentication") {
+    if (!config.auth.PreAuthenticatedKey) throw new Error("PreAuthenticatedKey is required");
+    getRegion(config.region);
+    const baseURL = utils.format("https://objectstorage.%s.oraclecloud.com/p/%s/n/%s/b/%s", config.region, config.auth.PreAuthenticatedKey, config.namespace, config.name);
+
+    async function uploadFile(fileName: string, fileStream: string|Buffer|stream.Readable) {
+      await coreHttp.bufferRequest({
+        method: "PUT",
+        url: utils.format("%s/o/%s", baseURL, encodeURIComponent(checkFileName(fileName))),
+        body: fileStream,
+        headers: {
+          "Content-Type": "application/octet-stream",
+        }
+      })
+    }
+
+    async function deleteFile(pathLocation: string) {
+      await coreHttp.bufferRequest({
+        method: "DELETE",
+        url: utils.format("%s/o/%s", baseURL, encodeURIComponent(checkFileName(pathLocation))),
+      })
+    }
+
+    async function listFiles(folder?: string) {
+      const data: {
+        "name": string,
+        "size"?: number,
+        "timeCreated"?: string,
+        "timeModified"?: string,
+        "etag"?: string,
+        "storageTier"?: "Standard"|"InfrequentAccess"|"Archive",
+        "archivalState"?: "Archived"|"Restoring"|"Restored",
+        "md5"?: string
+      }[] = [];
+      let startAfter: string;
+      while (true) {
+        const response = await coreHttp.jsonRequest<{
+          nextStartWith?: string,
+          objects: typeof data
+        }>({
+          method: "GET",
+          url: utils.format("%s/o", baseURL),
+          query: {
+            limit: 1000,
+            fields: "name,size,etag,timeCreated,md5,timeModified,storageTier,archivalState",
+            prefix: folder ?? "",
+            startAfter: startAfter ?? "",
+          }
+        });
+        data.push(...response.body.objects);
+        if (!(startAfter = response.body.nextStartWith)) break;
+      }
+      return data.map((item) => ({
+        name: item.name,
+        size: item.size,
+        timeCreated: item.timeCreated ? new Date(item.timeCreated) : undefined,
+        timeModified: item.timeModified ? new Date(item.timeModified) : undefined,
+        storageTier: item.storageTier,
+        archivalState: item.archivalState,
+        md5: item.md5,
+      }));
+    }
+
+    async function getFileStream(pathLocation: string): Promise<stream.Readable> {
+      const response = await coreHttp.streamRequest({
+        method: "GET",
+        url: utils.format("%s/o/%s", baseURL, encodeURIComponent(checkFileName(pathLocation))),
+      });
+      return response;
+    }
+
+    // async function renameFile(currentName: string, newName: string) {
+    //   await coreHttp.bufferRequest({
+    //     method: "POST",
+    //     url: utils.format("%s/actions/renameObject", baseURL),
+    //     headers: {
+    //       "Content-Type": "application/json",
+    //     },
+    //     body: JSON.stringify({
+    //       sourceName: checkFileName(currentName),
+    //       newName: checkFileName(newName),
+    //       srcObjIfMatchETag: "*",
+    //       newObjIfMatchETag: "*",
+    //       newObjIfNoneMatchETag: "*"
+    //     })
+    //   });
+    // }
+
+    async function updateTier(filePath: string, storageTier: "Standard"|"InfrequentAccess"|"Archive") {
+      if (!(["Standard", "InfrequentAccess", "Archive"]).includes(storageTier)) throw new TypeError("Invalid storage tier");
+      await coreHttp.bufferRequest({
+        method: "POST",
+        url: utils.format("%s/actions/updateObjectStorageTier", baseURL),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: {
+          objectName: checkFileName(filePath),
+          storageTier,
+        }
+      });
+    }
+
+    return {
+      baseURL,
+      listFiles,
+      uploadFile,
+      deleteFile,
+      // renameFile,
+      updateTier,
+      getFileStream,
+    };
+  }
   const client = new ociBucket.ObjectStorageClient({
-    authenticationDetailsProvider: config.auth.type === "preAuthentication" ? null : new ociAuth.SimpleAuthenticationDetailsProvider(
+    authenticationDetailsProvider: new ociAuth.SimpleAuthenticationDetailsProvider(
       config.auth.tenancy,
       config.auth.user,
       config.auth.fingerprint,
@@ -71,16 +194,6 @@ export async function oracleBucket(config: oracleOptions) {
       getRegion(config.region)
     )
   });
-  if (config.auth.type === "preAuthentication") {
-    // await client.createPreauthenticatedRequest({
-    //   bucketName: config.name,
-    //   namespaceName: config.namespace,
-    //   createPreauthenticatedRequestDetails: {
-    //     accessType: ociBucket.models.CreatePreauthenticatedRequestDetails.AccessType.AnyObjectReadWrite,
-    //     timeExpires
-    //   }
-    // })
-  }
   async function uploadFile(fileName: string, fileStream: string|Buffer|stream.Readable) {
     await client.putObject({
       namespaceName: config.namespace,
@@ -107,7 +220,7 @@ export async function oracleBucket(config: oracleOptions) {
         bucketName: config.name,
         fields: "name,size,etag,timeCreated,md5,timeModified,storageTier,archivalState" as any,
         prefix: folder,
-        start
+        startAfter: start,
       });
       objects.push(...listObjects.objects);
       if (!(start = listObjects.nextStartWith)) break;

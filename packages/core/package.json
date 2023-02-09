@@ -1,10 +1,11 @@
 {
   "name": "@sirherobrine23/coreutils",
-  "version": "3.0.6",
+  "version": "3.1.1",
   "description": "This is a simple project to bring together and facilitate some simple resources from the world of Nodejs and Typescript.",
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
+  "readme": "../../README.md",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
@@ -30,12 +31,12 @@
     "../util"
   ],
   "dependencies": {
-    "@sirherobrine23/ar": "3.0.6",
-    "@sirherobrine23/basic_utils": "3.0.6",
-    "@sirherobrine23/cloud": "3.0.6",
-    "@sirherobrine23/debian": "3.0.6",
-    "@sirherobrine23/docker-registry": "^3.0.6",
-    "@sirherobrine23/extends": "3.0.6",
-    "@sirherobrine23/http": "3.0.6"
+    "@sirherobrine23/ar": "3.1.1",
+    "@sirherobrine23/basic_utils": "3.1.1",
+    "@sirherobrine23/cloud": "3.1.1",
+    "@sirherobrine23/debian": "3.1.1",
+    "@sirherobrine23/docker-registry": "3.1.1",
+    "@sirherobrine23/extends": "3.1.1",
+    "@sirherobrine23/http": "3.1.1"
   }
 }

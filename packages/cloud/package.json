@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/cloud",
-  "version": "3.0.6",
+  "version": "3.1.1",
   "description": "",
   "type": "module",
   "main": "src/index.js",
@@ -20,9 +20,13 @@
   "keywords": [],
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
+  "workspaces": [
+    "../http"
+  ],
   "dependencies": {
     "googleapis": "^110.0.0",
     "oci-common": "^2.50.4",
-    "oci-objectstorage": "^2.51.0"
+    "oci-objectstorage": "^2.51.0",
+    "@sirherobrine23/http": "3.1.1"
   }
 }

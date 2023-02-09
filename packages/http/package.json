@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/http",
-  "version": "3.0.6",
+  "version": "3.1.1",
   "description": "",
   "type": "module",
   "main": "src/index.js",
@@ -24,7 +24,7 @@
     "../extends"
   ],
   "dependencies": {
-    "@sirherobrine23/extends": "3.0.6",
+    "@sirherobrine23/extends": "3.1.1",
     "acme-client": "^5.0.0",
     "adm-zip": "^0.5.10",
     "cloudflare": "^2.9.1",
