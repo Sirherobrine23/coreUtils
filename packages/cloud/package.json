@@ -21,12 +21,15 @@
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
   "workspaces": [
-    "../http"
+    "../http",
+    "../extends"
   ],
   "dependencies": {
+    "@sirherobrine23/extends": "3.1.1",
+    "@sirherobrine23/http": "3.1.1",
+    "chokidar": "^3.5.3",
     "googleapis": "^110.0.0",
     "oci-common": "^2.50.4",
-    "oci-objectstorage": "^2.51.0",
-    "@sirherobrine23/http": "3.1.1"
+    "oci-objectstorage": "^2.51.0"
   }
 }
