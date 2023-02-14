@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { ReadStream } from "node:fs"
 import { Readable } from "node:stream";
-import { google } from "googleapis";
+import { drive_v3, google } from "googleapis";
 
 // Google Credential
 export type googleCredential = {
@@ -29,6 +29,19 @@ export type googleCredential = {
    * The scopes of access granted by the access_token expressed as a list of space-delimited, case-sensitive strings.
    */
   scope?: string;
+};
+
+export type googleFileList = {
+  id: string,
+  name: string,
+  size: number,
+  isTrashedFile: boolean,
+  type: "file"| "folder",
+  parent?: string,
+  Dates: {
+    created: Date,
+    modified: Date,
+  }
 };
 
 // Options object
@@ -103,19 +116,33 @@ export async function GoogleDriver(options: googleOptions) {
    * @param folderID - ID of the folder
    * @returns
    */
-  async function listFiles(folderID?: string) {
-    const res = await files.list({
-      fields: 'files(id, name, size, trashed, createdTime, modifiedTime, originalFilename)',
-      q: folderID ? `'${folderID}' in parents`:undefined,
-    });
-    return res.data.files.map(file => ({
+  async function listFiles(folderID?: string, recursiveBreak = false): Promise<googleFileList[]> {
+    // const mainData: googleFileList[] = [];
+    const data: (drive_v3.Schema$File & {childreen?: drive_v3.Schema$File[]})[] = [];
+    let nextPageToken: string;
+    while (true) {
+      const gResult = await files.list({
+        q: folderID ? `'${folderID}' in parents`:undefined,
+        fields: 'nextPageToken, files(id, name, size, trashed, createdTime, modifiedTime, originalFilename, parents, mimeType)',
+        spaces: "drive",
+        pageToken: nextPageToken,
+        pageSize: 1000,
+      });
+      data.push(...gResult.data.files);
+      if (recursiveBreak) break;
+      if (!(nextPageToken = gResult.data.nextPageToken)) break;
+    }
+
+    return data.map(file => ({
       id: file.id,
-      name: String(file.name || file.originalFilename),
-      size: Number(file.size),
-      isTrashedFile: file.trashed,
-      date: {
-        create: file.createdTime ? new Date(file.createdTime) : null,
-        modified: file.modifiedTime ? new Date(file.modifiedTime) : null,
+      name: file.name ?? file.originalFilename,
+      size: parseInt(file.size ?? "0"),
+      isTrashedFile: file.trashed ?? false,
+      type: file.mimeType === "application/vnd.google-apps.folder" ? "folder" : "file",
+      parent: file.parents?.at(-1) || null,
+      Dates: {
+        created: new Date(file.createdTime),
+        modified: new Date(file.modifiedTime),
       }
     }));
   }
