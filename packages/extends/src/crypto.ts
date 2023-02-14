@@ -11,23 +11,30 @@ export type hashObject = {
 
 export declare interface hashWrite extends stream.Writable {
   on(event: "close", listener: () => void): this;
-  on(event: "drain", listener: () => void): this;
-  on(event: "error", listener: (err: Error) => void): this;
-  on(event: "finish", listener: () => void): this;
-  on(event: "pipe", listener: (src: stream.Readable) => void): this;
-  on(event: "unpipe", listener: (src: stream.Readable) => void): this;
-  on(event: "hashObject", listener: (hash: hashObject) => void): this;
-  on(event: hashAlgorithm, listener: (hash: string) => void): this;
-  on(event: string | symbol, listener: (...args: any[]) => void): this;
-
   once(event: "close", listener: () => void): this;
+
+  on(event: "drain", listener: () => void): this;
   once(event: "drain", listener: () => void): this;
+
+  on(event: "error", listener: (err: Error) => void): this;
   once(event: "error", listener: (err: Error) => void): this;
+
+  on(event: "finish", listener: () => void): this;
   once(event: "finish", listener: () => void): this;
+
+  on(event: "pipe", listener: (src: stream.Readable) => void): this;
   once(event: "pipe", listener: (src: stream.Readable) => void): this;
+
+  on(event: "unpipe", listener: (src: stream.Readable) => void): this;
   once(event: "unpipe", listener: (src: stream.Readable) => void): this;
+
+  on(event: "hashObject", listener: (hash: hashObject) => void): this;
   once(event: "hashObject", listener: (hash: hashObject) => void): this;
+
+  on(event: hashAlgorithm, listener: (hash: string) => void): this;
   once(event: hashAlgorithm, listener: (hash: string) => void): this;
+
+  on(event: string | symbol, listener: (...args: any[]) => void): this;
   once(event: string | symbol, listener: (...args: any[]) => void): this;
 }
 

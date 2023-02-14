@@ -1,7 +1,7 @@
+import { drive_v3, google } from "googleapis";
 import { createServer } from "node:http";
 import { ReadStream } from "node:fs"
-import { Readable } from "node:stream";
-import { drive_v3, google } from "googleapis";
+import stream from "node:stream";
 
 // Google Credential
 export type googleCredential = {
@@ -46,21 +46,17 @@ export type googleFileList = {
 
 // Options object
 export type googleOptions = {
-  clientID: string,
-  clientSecret: string,
+  clientID?: string,
+  clientSecret?: string,
   token?: googleCredential,
   callback?: (err?: Error, data?: {authUrl?: string, token?: googleOptions["token"]}) => void,
+  oauth?: Awaited<ReturnType<typeof createAuth>>
 };
 
-/**
- * Create client to Google Driver
- * @returns
- */
-export async function GoogleDriver(options: googleOptions) {
-  const clientID = options.clientID;
-  const clientSecret = options.clientSecret;
-  const token = options.token;
-  const authCallback = options.callback;
+async function createAuth(options: googleOptions) {
+  const clientID = options.clientID, clientSecret = options.clientSecret, token = options.token, authCallback = options.callback;
+  if (!clientID) throw new Error("Required Google Client ID");
+  else if (!clientSecret) throw new Error("Required Google Client Secret");
 
   // Oauth2
   let auth = new google.auth.OAuth2(clientID, clientSecret);
@@ -107,8 +103,17 @@ export async function GoogleDriver(options: googleOptions) {
     });
   }
 
+  return auth;
+}
+
+/**
+ * Create client to Google Driver
+ * @returns
+ */
+export async function GoogleDriver(options: googleOptions) {
+  const { oauth = await createAuth(options) } = options;
   // Google Driver API
-  const { files } = google.drive({version: "v3", auth});
+  const { files } = google.drive({version: "v3", auth: oauth});
 
   /**
    * Get files and folder list array from folder
@@ -122,10 +127,10 @@ export async function GoogleDriver(options: googleOptions) {
     let nextPageToken: string;
     while (true) {
       const gResult = await files.list({
-        q: folderID ? `'${folderID}' in parents`:undefined,
+        ...(folderID ? {q: `'${folderID}' in parents`}:{}),
+        ...(nextPageToken ? {pageToken: nextPageToken} : {}),
         fields: 'nextPageToken, files(id, name, size, trashed, createdTime, modifiedTime, originalFilename, parents, mimeType)',
         spaces: "drive",
-        pageToken: nextPageToken,
         pageSize: 1000,
       });
       data.push(...gResult.data.files);
@@ -153,14 +158,14 @@ export async function GoogleDriver(options: googleOptions) {
    * @param fileID - ID of the file
    * @returns
    */
-  async function getFileStream(fileID: string) {
+  async function getFileStream(fileID: string): Promise<stream.Readable> {
     // not check to get file ID
     return (await files.get({alt: "media", fileId: fileID}, {responseType: "stream"})).data;
   }
 
-  async function uploadFile(fileName: string, fileStream: ReadStream|Readable, folderID?: string) {
-    const res = await files.create({
-      fields: "id, name, size",
+  async function uploadFile(fileName: string, fileStream: ReadStream|stream.Readable|Buffer|string, folderID?: string): Promise<googleFileList> {
+    const { data: info } = await files.create({
+      fields: "id, name, size, trashed, createdTime, modifiedTime, originalFilename, parents, mimeType",
       requestBody: {
         name: fileName,
         ...(folderID ? {parents: [folderID]} : {}),
@@ -171,16 +176,37 @@ export async function GoogleDriver(options: googleOptions) {
       },
     });
     return {
-      id: res.data.id,
-      name: res.data.name ?? res.data.originalFilename,
-      size: parseInt(res.data.size),
-      isTrashedFile: res.data.trashed,
-      cDate: res.data.createdTime ? new Date(res.data.createdTime) : null,
+      id: info.id,
+      name: info.originalFilename ?? info.name,
+      size: Number(info.size ?? 0),
+      isTrashedFile: info.trashed,
+      type: info.mimeType === "application/vnd.google-apps.folder" ? "folder" : "file",
+      parent: info.parents.at(-1),
+      Dates: {
+        created: new Date(info.createdTime ?? 0),
+        modified: new Date(info.modifiedTime ?? 0)
+      }
     };
   }
 
-  async function deleteFile(folderID: string) {
-    await files.delete({fileId: folderID});
+  async function deleteFile(id: string): Promise<googleFileList> {
+    const info = await files.get({
+      fileId: id,
+      fields: "id, name, size, trashed, createdTime, modifiedTime, originalFilename, parents, mimeType",
+    }).then(r => r.data);
+    await files.delete({fileId: info.id});
+    return {
+      id: info.id,
+      name: info.originalFilename ?? info.name,
+      size: Number(info.size ?? 0),
+      isTrashedFile: info.trashed,
+      type: info.mimeType === "application/vnd.google-apps.folder" ? "folder" : "file",
+      parent: info.parents.at(-1),
+      Dates: {
+        created: new Date(info.createdTime ?? 0),
+        modified: new Date(info.modifiedTime ?? 0)
+      }
+    };
   }
 
   return {

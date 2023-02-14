@@ -7,4 +7,12 @@ import * as Cloud from "@sirherobrine23/cloud";
 import * as Docker from "@sirherobrine23/docker-registry";
 
 export { Ar, http, Extends, Debian, Utils, Cloud, Docker };
-export default { Ar, http, Extends, Debian, Utils, Cloud, Docker };
+export default {
+  Ar: Ar.default,
+  http: http.default,
+  Extends: Extends.default,
+  Debian: Debian.default,
+  Utils: Utils.default,
+  Cloud: Cloud.default,
+  Docker: Docker,
+};

@@ -50,15 +50,17 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
   // Fix body to got
   if (!ignoreBody.includes(re.method||"GET") && re.body) {
     if (typeof re.body === "string"||Buffer.isBuffer(re.body)) requestBody.body = re.body;
-    else if (typeof (re.body as stream.Readable).pipe === "function") requestBody.body = re.body;
+    else if (re.body instanceof stream.Readable || typeof (re.body as stream.Readable).pipe === "function") requestBody.body = re.body;
     else requestBody.json = re.body;
   }
 
   const request = got.stream(URLFixed, requestBody);
   (await new Promise<void>((done, reject) => request.on("error", reject).on("response", done)));
   request["headers"] = {};
-  const headers = request["response"]["headers"] || request["response"]["trailers"] || {};
-  for (const keyName in headers) request["headers"][keyName] = headers[keyName];
+  for (const head of ([request["response"]["headers"], request["response"]["trailers"]])) {
+    if (!head) continue;
+    for (const keyName in head) if (typeof head[keyName] === "string" || Array.isArray(head[keyName])) request["headers"][keyName] = head[keyName];
+  }
   return request as any;
 }
 

@@ -1,3 +1,5 @@
+export default { parseM3U, notationToObject, objectToNotation };
+
 export function parseM3U(fileData: string) {
   fileData = fileData.replace(/\r\n/gm, "\n").replace("#EXTM3U", "").trim();
   const lines = fileData.split(/^#EXT[A-Z]+:/gm).filter(Boolean);
