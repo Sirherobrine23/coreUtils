@@ -61,6 +61,7 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
     if (!head) continue;
     for (const keyName in head) if (typeof head[keyName] === "string" || Array.isArray(head[keyName])) request["headers"][keyName] = head[keyName];
   }
+  if (request.redirectUrls || (request.redirectUrls?.length ?? 0) <= 0) request.redirectUrls = [URLFixed]
   return request as any;
 }
 
