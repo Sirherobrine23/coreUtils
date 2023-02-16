@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packagesRoot = path.resolve(__dirname, "../packages");
 const packages = [
   "ar",
+  "page_index",
   "utils",
   "extends",
   "http",
