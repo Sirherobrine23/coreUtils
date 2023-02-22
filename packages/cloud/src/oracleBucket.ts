@@ -123,7 +123,7 @@ export async function oracleBucket(config: oracleOptions): Promise<oracleBucket>
     partialFunctions.uploadFile = async function uploadFile(fileName: string, fileStream: string|Buffer|stream.Readable) {
       await coreHttp.bufferRequest({
         method: "PUT",
-        url: utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(fileName)))),
+        url: utils.format("%s/o/%s", baseURL, fixDir(checkFileName(fileName))),
         body: fileStream,
         headers: {
           "Content-Type": "application/octet-stream",
@@ -134,7 +134,7 @@ export async function oracleBucket(config: oracleOptions): Promise<oracleBucket>
      partialFunctions.deleteFile = async function deleteFile(pathLocation: string) {
       await coreHttp.bufferRequest({
         method: "DELETE",
-        url: utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(pathLocation)))),
+        url: utils.format("%s/o/%s", baseURL, fixDir(checkFileName(pathLocation))),
       })
     }
 
@@ -173,7 +173,7 @@ export async function oracleBucket(config: oracleOptions): Promise<oracleBucket>
     partialFunctions.getFileStream = async function getFileStream(pathLocation: string): Promise<stream.Readable> {
       const response = await coreHttp.streamRequest({
         method: "GET",
-        url: utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(pathLocation)))),
+        url: utils.format("%s/o/%s", baseURL, fixDir(checkFileName(pathLocation))),
       });
       return response;
     }
