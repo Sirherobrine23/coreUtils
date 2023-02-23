@@ -1,5 +1,5 @@
 import { JSDOM } from "jsdom";
-import gotMain, { Method, Headers, OptionsInit, Request } from "got";
+import gotMain, { Method, Headers, OptionsInit, Request, HTTPError } from "got";
 import stream from "node:stream";
 
 const ignoreBody: Method[] = ["GET", "get"];
@@ -55,7 +55,19 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
   }
 
   const request = got.stream(URLFixed, requestBody);
-  (await new Promise<void>((done, reject) => request.on("error", reject).on("response", done)));
+  (await new Promise<void>((done, reject) => request.on("error", (err: HTTPError) => {
+    const newError = new class httpCoreError {
+      message = err.message;
+      headers = err.response?.headers;
+      rawBody = err.response?.body as any;
+      body: any;
+      rawError = err;
+    };
+    try {
+      newError.body = JSON.parse(String(newError.rawBody));
+    } catch {}
+    reject(newError);
+  }).on("response", done)));
   request["headers"] = {};
   for (const head of ([request["response"]["headers"], request["response"]["trailers"]])) {
     if (!head) continue;

@@ -1,8 +1,8 @@
 import * as ociBucket from "oci-objectstorage";
 import * as ociAuth from "oci-common";
 import * as coreHttp from "@sirherobrine23/http";
-import * as Extends from "@sirherobrine23/extends";
-import { createReadStream, createWriteStream, promises as fs } from "node:fs";
+import extendsFS from "@sirherobrine23/extends";
+import { createReadStream, createWriteStream, ReadStream, promises as fs } from "node:fs";
 import chokidar from "chokidar";
 import stream from "node:stream";
 import utils from "node:util";
@@ -71,6 +71,12 @@ function checkFileName(name: string) {
   return name;
 }
 
+function fixDir(filePath: string) {
+  filePath = path.posix.normalize(path.posix.join("/", filePath));
+  if (filePath.startsWith("/")) filePath = filePath.slice(1);
+  return filePath;
+}
+
 type oracleFileListObjectinternal = {
   "name": string,
   "size"?: number,
@@ -98,7 +104,7 @@ export type oracleFileListObject = {
 export type oracleBucket = {
   listFiles(folderPath?: string): Promise<oracleFileListObject[]>,
   deleteFile(pathLocation: string): Promise<void>,
-  uploadFile(fileName: string, fileStream: string|Buffer|stream.Readable): Promise<void>,
+  uploadFile(fileName: string, fileStream: string|Buffer|stream.Readable, storageTier?: "Standard"|"InfrequentAccess"|"Archive"): Promise<void>,
   getFileStream(pathLocation: string): Promise<stream.Readable>,
   updateTier?(filePath: string, storageTier: "Standard"|"InfrequentAccess"|"Archive"): Promise<void>,
   watch?(filePath: string, options?: {downloadFist?: boolean, remoteFolder?: string}): Promise<chokidar.FSWatcher>,
@@ -114,27 +120,38 @@ export async function oracleBucket(config: oracleOptions): Promise<oracleBucket>
     getRegion(config.region);
     const baseURL = utils.format("https://objectstorage.%s.oraclecloud.com/p/%s/n/%s/b/%s", config.region, config.auth.PreAuthenticatedKey, config.namespace, config.name);
 
-    function fixDir(filePath: string) {
-      filePath = path.posix.normalize(path.posix.resolve("/", filePath));
-      if (filePath.startsWith("/")) filePath = filePath.slice(1);
-      return filePath;
-    }
-
-    partialFunctions.uploadFile = async function uploadFile(fileName: string, fileStream: string|Buffer|stream.Readable) {
+    partialFunctions.uploadFile = async function uploadFile(fileName: string, fileStream: string|Buffer|stream.Readable, storageTier?: "Standard"|"InfrequentAccess"|"Archive") {
+      if (!!storageTier) if (!(["Standard", "InfrequentAccess", "Archive"]).includes(storageTier)) storageTier = undefined;
+      let size = -1;
+      if (typeof (fileName as any as ReadStream).pipe === "function") {
+        const data = (fileName as any as ReadStream)?.[Symbol("kFs")];
+        if (!!data) {
+          let nSize = data.lstatSync()?.size;
+          if (typeof nSize === "number") size = nSize;
+        }
+      }
       await coreHttp.bufferRequest({
         method: "PUT",
-        url: utils.format("%s/o/%s", baseURL, fixDir(checkFileName(fileName))),
+        url: utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(fileName)))),
         body: fileStream,
         headers: {
+          ...(size > -1 ? {
+            "Content-Length": String(size),
+          } : {}),
+          ...(!!storageTier ? {
+            "storage-tier": storageTier,
+          } : {}),
+          // "Content-Type": "application/x-directory",
+          // "opc-meta-virtual-folder-directory-object": "true",
           "Content-Type": "application/octet-stream",
         }
-      })
+      });
     }
 
      partialFunctions.deleteFile = async function deleteFile(pathLocation: string) {
       await coreHttp.bufferRequest({
         method: "DELETE",
-        url: utils.format("%s/o/%s", baseURL, fixDir(checkFileName(pathLocation))),
+        url: utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(pathLocation)))),
       })
     }
 
@@ -282,12 +299,12 @@ export async function oracleBucket(config: oracleOptions): Promise<oracleBucket>
   partialFunctions.watch = async function(folderPath, options) {
     if (!options) options = {};
     if (!folderPath) throw new TypeError("Folder path is required");
-    else if (!(await Extends.exists(folderPath))) throw new Error("Folder path is not exists");
-    else if (!(await Extends.isDirectory(folderPath))) throw new Error("Folder path is not a directory");
+    else if (!(await extendsFS.exists(folderPath))) throw new Error("Folder path is not exists");
+    else if (!(await extendsFS.isDirectory(folderPath))) throw new Error("Folder path is not a directory");
     if (options.downloadFist) {
       let { remoteFolder = "" } = options;
       const filesList = (await partialFunctions!.listFiles(remoteFolder)).map(d => d.name);
-      const localList = (await Extends.readdir(folderPath)).map(file => path.posix.resolve("/", path.relative(folderPath, file)));
+      const localList = (await extendsFS.readdir(folderPath)).map(file => path.posix.resolve("/", path.relative(folderPath, file)));
       for (const local of localList) if (!filesList.includes(local)) await fs.unlink(path.posix.resolve(folderPath, local));
       for await (const remote of filesList) await new Promise(async (done, reject) => (await partialFunctions!.getFileStream(remote)).pipe(createWriteStream(path.posix.resolve(folderPath, remote))).on("error", reject).once("done", done));
     }

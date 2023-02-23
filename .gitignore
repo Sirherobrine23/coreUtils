@@ -12,3 +12,4 @@ examples/souces/
 # Typescript
 packages/**/src/**/*.d.ts
 packages/**/src/**/*.js
+packages/**/tsconfig.tsbuildinfo
