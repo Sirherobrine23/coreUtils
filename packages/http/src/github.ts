@@ -225,7 +225,7 @@ export async function GithubManeger(owner: string, repository: string, token: st
     if (typeof releaseTag === "string"||typeof releaseTag === "boolean") {
       if (typeof releaseTag === "boolean") requestURL.pathname = path.posix.join(requestURL.pathname, "latest");
       else requestURL.pathname = path.posix.join(requestURL.pathname, "tags", releaseTag);
-      return jsonRequest<githubRelease>(requestURL, {headers: token?{Authorization: `token ${token}`}:{}}).catch(() => null);
+      return jsonRequest<githubRelease>(requestURL, {headers: token?{Authorization: `token ${token}`}:{}}).then(res => res.body).catch(() => null);
     }
     requestURL.searchParams.set("per_page", "99");
     const releaseList: githubRelease[] = [];
