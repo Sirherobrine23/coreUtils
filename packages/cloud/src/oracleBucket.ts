@@ -126,8 +126,10 @@ export async function oracleBucket(config: oracleOptions): Promise<oracleBucket>
       if (typeof (fileName as any as ReadStream).pipe === "function") {
         const data = (fileName as any as ReadStream)?.[Symbol("kFs")];
         if (!!data) {
-          let nSize = data.lstatSync()?.size;
-          if (typeof nSize === "number") size = nSize;
+          try {
+            let nSize = data.lstatSync()?.size;
+            if (typeof nSize === "number" && !isNaN(nSize)) size = nSize;
+          } catch {}
         }
       }
       await coreHttp.bufferRequest({
@@ -145,7 +147,23 @@ export async function oracleBucket(config: oracleOptions): Promise<oracleBucket>
           // "opc-meta-virtual-folder-directory-object": "true",
           "Content-Type": "application/octet-stream",
         }
-      });
+      }).catch(() => coreHttp.bufferRequest({
+        method: "PUT",
+        url: utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(fileName)))),
+        body: fileStream,
+        disableHTTP2: true,
+        headers: {
+          ...(size > -1 ? {
+            "Content-Length": String(size),
+          } : {}),
+          ...(!!storageTier ? {
+            "storage-tier": storageTier,
+          } : {}),
+          // "Content-Type": "application/x-directory",
+          // "opc-meta-virtual-folder-directory-object": "true",
+          "Content-Type": "application/octet-stream",
+        }
+      }));
     }
 
      partialFunctions.deleteFile = async function deleteFile(pathLocation: string) {

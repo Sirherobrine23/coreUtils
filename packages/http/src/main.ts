@@ -8,7 +8,7 @@ const got = gotMain.extend({
   resolveBodyOnly: false,
   throwHttpErrors: false,
   responseType: "buffer",
-  decompress: false,
+  decompress: true,
   method: "GET",
   http2: true,
 });
@@ -20,6 +20,7 @@ export type requestOptions = {
   headers?: Headers,
   query?: {[key: string]: string|number|boolean},
   body?: any,
+  disableHTTP2?: boolean
 };
 
 /**
@@ -45,6 +46,7 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
     headers: re.headers || {},
     method: re.method || "GET",
     encoding: "binary",
+    http2: !(re.disableHTTP2 ?? false)
   };
 
   // Fix body to got
