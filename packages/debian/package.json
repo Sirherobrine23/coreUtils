@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/debian",
-  "version": "3.1.1",
+  "version": "3.2.5",
   "description": "",
   "type": "module",
   "main": "src/index.js",
@@ -26,9 +26,9 @@
     "../extends"
   ],
   "dependencies": {
-    "@sirherobrine23/ar": "3.1.1",
-    "@sirherobrine23/extends": "3.1.1",
-    "@sirherobrine23/http": "3.1.1",
+    "@sirherobrine23/ar": "3.2.5",
+    "@sirherobrine23/extends": "3.2.5",
+    "@sirherobrine23/http": "3.2.5",
     "lzma-native": "^8.0.6",
     "unbzip2-stream": "^1.4.3"
   },
