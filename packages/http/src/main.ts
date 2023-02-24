@@ -9,8 +9,7 @@ const got = gotMain.extend({
   throwHttpErrors: false,
   responseType: "buffer",
   decompress: true,
-  method: "GET",
-  http2: true,
+  method: "GET"
 });
 
 export type validURL = string|URL;
