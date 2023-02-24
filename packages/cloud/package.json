@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/cloud",
-  "version": "3.1.1",
+  "version": "3.2.5",
   "description": "",
   "type": "module",
   "main": "src/index.js",
@@ -25,8 +25,8 @@
     "../extends"
   ],
   "dependencies": {
-    "@sirherobrine23/extends": "3.1.1",
-    "@sirherobrine23/http": "3.1.1",
+    "@sirherobrine23/extends": "3.2.5",
+    "@sirherobrine23/http": "3.2.5",
     "chokidar": "^3.5.3",
     "googleapis": "^110.0.0",
     "oci-common": "^2.50.4",
