@@ -10,20 +10,23 @@ jobs:
     runs-on: ubuntu-latest
     permissions: write-all
     steps:
-      - uses: actions/checkout@v3
-        name: Checkout
-
       - uses: actions/setup-node@v3
         name: Setup Node.js
         with:
           registry-url: https://registry.npmjs.org/
           node-version: latest
 
+      - uses: actions/checkout@v3
+        name: Checkout
+        with:
+          fetch-depth: 0
+          ref: main
+
       - name: Install dependencies
         run: npm install --no-save
 
       - name: Edit version
-        run: npm run update_version -- ${{ github.event.release.tag_name }} --env_file=$GITHUB_ENV
+        run: npm run update_version -- ${{ github.event.release.tag_name }} --env_file="$GITHUB_ENV"
 
       - name: Build package
         run: npm run build
@@ -52,7 +55,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           name: ${{ github.event.release.name }}
           body: ${{ github.event.release.body }}
-          files: sirherobrine23-*.tgz
+          files: "*.tgz"
 
       - name: Create pull request
         uses: peter-evans/create-pull-request@v4
