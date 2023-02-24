@@ -132,24 +132,8 @@ export async function oracleBucket(config: oracleOptions): Promise<oracleBucket>
           } catch {}
         }
       }
-      await coreHttp.bufferRequest({
+      await coreHttp.bufferRequest(utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(fileName)))), {
         method: "PUT",
-        url: utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(fileName)))),
-        body: fileStream,
-        headers: {
-          ...(size > -1 ? {
-            "Content-Length": String(size),
-          } : {}),
-          ...(!!storageTier ? {
-            "storage-tier": storageTier,
-          } : {}),
-          // "Content-Type": "application/x-directory",
-          // "opc-meta-virtual-folder-directory-object": "true",
-          "Content-Type": "application/octet-stream",
-        }
-      }).catch(() => coreHttp.bufferRequest({
-        method: "PUT",
-        url: utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(fileName)))),
         body: fileStream,
         disableHTTP2: true,
         headers: {
@@ -163,14 +147,13 @@ export async function oracleBucket(config: oracleOptions): Promise<oracleBucket>
           // "opc-meta-virtual-folder-directory-object": "true",
           "Content-Type": "application/octet-stream",
         }
-      }));
+      });
     }
 
      partialFunctions.deleteFile = async function deleteFile(pathLocation: string) {
-      await coreHttp.bufferRequest({
-        method: "DELETE",
-        url: utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(pathLocation)))),
-      })
+      await coreHttp.bufferRequest(utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(pathLocation)))), {
+        method: "DELETE"
+      });
     }
 
     partialFunctions.listFiles = async function listFiles(folder: string = "") {
@@ -178,9 +161,8 @@ export async function oracleBucket(config: oracleOptions): Promise<oracleBucket>
       const data: oracleFileListObject[] = [];
       let startAfter: string;
       while (true) {
-        const response = await coreHttp.jsonRequest<{nextStartWith?: string, objects: oracleFileListObjectinternal[]}>({
+        const response = await coreHttp.jsonRequest<{nextStartWith?: string, objects: oracleFileListObjectinternal[]}>(utils.format("%s/o", baseURL), {
           method: "GET",
-          url: utils.format("%s/o", baseURL),
           query: {
             limit: 1000,
             fields: "name,size,etag,timeCreated,md5,timeModified,storageTier,archivalState",
@@ -206,9 +188,8 @@ export async function oracleBucket(config: oracleOptions): Promise<oracleBucket>
     }
 
     partialFunctions.getFileStream = async function getFileStream(pathLocation: string): Promise<stream.Readable> {
-      const response = await coreHttp.streamRequest({
-        method: "GET",
-        url: utils.format("%s/o/%s", baseURL, fixDir(checkFileName(pathLocation))),
+      const response = await coreHttp.streamRequest(utils.format("%s/o/%s", baseURL, fixDir(checkFileName(pathLocation))), {
+        method: "GET"
       });
       return response;
     }
@@ -232,9 +213,8 @@ export async function oracleBucket(config: oracleOptions): Promise<oracleBucket>
 
     partialFunctions.updateTier = async function updateTier(filePath: string, storageTier: "Standard"|"InfrequentAccess"|"Archive") {
       if (!(["Standard", "InfrequentAccess", "Archive"]).includes(storageTier)) throw new TypeError("Invalid storage tier");
-      await coreHttp.bufferRequest({
+      await coreHttp.bufferRequest(utils.format("%s/actions/updateObjectStorageTier", baseURL), {
         method: "POST",
-        url: utils.format("%s/actions/updateObjectStorageTier", baseURL),
         headers: {
           "Content-Type": "application/json",
         },
