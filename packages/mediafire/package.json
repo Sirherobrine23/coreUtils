@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/mediafire",
-  "version": "3.2.5",
+  "version": "3.2.6",
   "description": "",
   "type": "module",
   "main": "src/index.js",
@@ -21,7 +21,7 @@
   },
   "keywords": [],
   "dependencies": {
-    "@sirherobrine23/http": "3.2.5",
+    "@sirherobrine23/http": "3.2.6",
     "jsdom": "^21.1.0",
     "puppeteer": "^19.7.0"
   },
