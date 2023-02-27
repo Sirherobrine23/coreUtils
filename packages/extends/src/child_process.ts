@@ -1,103 +1,155 @@
-import { ObjectEncodingOptions } from "node:fs";
-import * as extendFs from "./fs.js";
 import child_process from "node:child_process";
-import path from "node:path";
+import path from "node:path"
+import * as extendsFS from "./fs.js";
 
-export type childProcessPromise = {
+export type childProcessResult = {
   code?: number|NodeJS.Signals,
   pid?: number,
   stdout?: Buffer,
   stderr?: Buffer
 };
 
-export type execObject<target extends "args"|"noArgs" = "args", T = any> = {
+export type execObject = {
   command: string,
-  options?: T,
-} & (target extends "args" ? {args?: string[]} : {});
+  args?: (string|number|boolean)[],
+  cwd?: string,
+  env?: {[envName: string]: (string|number|boolean)[]},
+  abortSignal?: AbortSignal,
+  killSignal?: AbortSignal,
+  gid?: number,
+  uid?: number,
+  shell?: string
+};
 
-export class execError extends Error {
-  public exitcode: number;
-  public exitSignal: NodeJS.Signals;
-  constructor(error: any, exitcode: number, exitSignal: NodeJS.Signals) {
-    super(error);
-    this.exitcode = exitcode;
-    this.exitSignal = exitSignal;
+/**
+ * Get full path if command exists, else return null
+ *
+ * @param command - Command path or name
+ * @returns
+ */
+export async function commandExists(command: string): Promise<null|string> {
+  try {
+    let fileLocation = "";
+    if (path.isAbsolute(command) || command.startsWith("..") || command.startsWith(".") && (["/", "\\"]).includes(command[1])) if (await extendsFS.exists(command)) fileLocation = path.resolve(process.cwd(), command);
+    else {
+      const commandFind: Omit<execObject, "args"|"killSignal"> = {command: `command -v "${command}"`};
+      if (process.platform === "win32") commandFind.command = `where "${command}"`;
+      fileLocation = (await exec(commandFind).then(({stderr = Buffer.from([]), stdout = Buffer.from([])}) => stdout?.toString("utf8")||stderr?.toString("utf8")||"")).trim();
+    }
+    return fileLocation.trim() ? fileLocation : null;
+  } catch {
+    return null;
   }
 }
 
-export type execFileOptions = ObjectEncodingOptions & child_process.ExecFileOptions;
-export type newExecFileOptions = execObject<"args", execFileOptions>;
-export async function execFile(command: string, args: string[], options: execFileOptions): Promise<childProcessPromise>;
-export async function execFile(command: string, args: string[]): Promise<childProcessPromise>;
-export async function execFile(command: string): Promise<childProcessPromise>;
-export async function execFile(command: newExecFileOptions): Promise<childProcessPromise>;
-export async function execFile(command: string|newExecFileOptions, args?: string[], options?: execFileOptions): Promise<childProcessPromise> {
-  if (typeof command === "string") {
-    if (!args) args = [];
-    if (!options) options = {};
-    command = {
-      command: command,
-      args: args,
-      options: options
-    };
-  }
-  const fixedCommand: newExecFileOptions = {options: {}, args: [], ...command};
-  if (fixedCommand.options.maxBuffer === undefined) fixedCommand.options.maxBuffer = Infinity;
-  fixedCommand.options.env = {...process.env, ...fixedCommand.options?.env};
-  fixedCommand.options.encoding = "binary";
-  return new Promise<childProcessPromise>((done, reject) => {
-    const child = child_process.execFile(fixedCommand.command, fixedCommand.args, fixedCommand.options, (err, stdout: Buffer, stderr: Buffer) => {
-      if (err) return reject(new execError(err, child.exitCode, child.exitSignal));
-      done({
-        code: child.exitCode||child.signalCode,
-        pid: child.pid,
-        stderr, stdout
-      });
-    });
+export async function execFile(command: string|execObject, args?: execObject["args"]|Omit<execObject, "command"|"args">, options?: Omit<execObject, "command"|"args">): Promise<childProcessResult> {
+  const commandRun = typeof command === "string" ? command : typeof command.command === "string" ? command.command : undefined;
+  if (!commandRun) throw TypeError("Command is invalid, required string or object with command!");
+  // Command args
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  const commandArgs = (typeof command === "string" ? Array.isArray(args) ? args.map(String) : [] : typeof command !== "string" && Array.isArray(command?.args) ? command?.args.map(String) : []);
+  const child = child_process.execFile(commandRun as any, commandArgs as any, {
+    maxBuffer: Infinity,
+    killSignal: (typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.killSignal : options?.killSignal : command.killSignal),
+    signal: (typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.abortSignal : options?.abortSignal : command.abortSignal),
+    uid: (typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.uid : options?.uid : command.uid),
+    gid: (typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.gid : options?.gid : command.gid),
+    shell: (typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.shell : options?.shell : command.shell),
+    cwd: typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.cwd : options?.cwd : command.cwd,
+    env: {
+      ...process.env,
+      ...(Object.keys((typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.env : options?.env : command.env) || {})).reduce((acc, key) => {
+        const env = (typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.env : options?.env : command.env) || {};
+        acc[key] = String(env[key]);
+        return acc;
+      }, {})
+    }
+  } as any);
+
+  // out's
+  if (child.stdout) child.stdout.on("data", data => stdout.push(Buffer.isBuffer(data) ? data : Buffer.from(data)));
+  if (child.stderr) child.stderr.on("data", data => stderr.push(Buffer.isBuffer(data) ? data : Buffer.from(data)));
+  const code = await new Promise<childProcessResult["code"]>((done, reject) => child.on("error", reject).on("cose", (code, signal) => done(code||signal)));
+
+  return {
+    stdout: stdout.length > 0 ? Buffer.concat(stdout) : null,
+    stderr: stderr.length > 0 ? Buffer.concat(stderr) : null,
+    pid: child.pid,
+    code,
+  };
+}
+
+export async function spawn(command: string|execObject, args?: execObject["args"]|Omit<execObject, "command"|"args">, options?: Omit<execObject, "command"|"args">): Promise<childProcessResult> {
+  const commandRun = typeof command === "string" ? command : typeof command.command === "string" ? command.command : undefined;
+  if (!commandRun) throw TypeError("Command is invalid, required string or object with command!");
+  // Command args
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  const commandArgs = (typeof command === "string" ? Array.isArray(args) ? args.map(String) : [] : typeof command !== "string" && Array.isArray(command?.args) ? command?.args.map(String) : []);
+  const child = child_process.spawn(commandRun as any, commandArgs as any, {
+    maxBuffer: Infinity,
+    killSignal: (typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.killSignal : options?.killSignal : command.killSignal),
+    signal: (typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.abortSignal : options?.abortSignal : command.abortSignal),
+    uid: (typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.uid : options?.uid : command.uid),
+    gid: (typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.gid : options?.gid : command.gid),
+    shell: (typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.shell : options?.shell : command.shell),
+    cwd: typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.cwd : options?.cwd : command.cwd,
+    env: {
+      ...process.env,
+      ...(Object.keys((typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.env : options?.env : command.env) || {})).reduce((acc, key) => {
+        const env = (typeof command === "string" ? typeof args === "object" && !Array.isArray(args) ? args.env : options?.env : command.env) || {};
+        acc[key] = String(env[key]);
+        return acc;
+      }, {})
+    }
+  } as any);
+
+  // out's
+  if (child.stdout) child.stdout.on("data", data => stdout.push(Buffer.isBuffer(data) ? data : Buffer.from(data)));
+  if (child.stderr) child.stderr.on("data", data => stderr.push(Buffer.isBuffer(data) ? data : Buffer.from(data)));
+  const code = await new Promise<childProcessResult["code"]>((done, reject) => child.on("error", reject).on("cose", (code, signal) => done(code||signal)));
+
+  return {
+    stdout: stdout.length > 0 ? Buffer.concat(stdout) : null,
+    stderr: stderr.length > 0 ? Buffer.concat(stderr) : null,
+    pid: child.pid,
+    code,
+  };
+}
+
+export async function exec(command: string|Omit<execObject, "args"|"killSignal">, options?: Omit<execObject, "command"|"args"|"killSignal">): Promise<childProcessResult> {
+  const commandRun = typeof command === "string" ? command : typeof command.command === "string" ? command.command : undefined;
+  if (!commandRun) throw TypeError("Command is invalid, required string or object with command!");
+  // Command args
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  const child = child_process.exec(commandRun, {
+    maxBuffer: Infinity,
+    signal: (typeof command === "string" ? options?.abortSignal : command.abortSignal),
+    uid: (typeof command === "string" ? options?.uid : command.uid),
+    gid: (typeof command === "string" ? options?.gid : command.gid),
+    shell: (typeof command === "string" ? options?.shell : command.shell),
+    cwd: typeof command === "string" ? options?.cwd : command.cwd,
+    env: {
+      ...process.env,
+      ...(Object.keys((typeof command === "string" ? options?.env : command.env) || {})).reduce((acc, key) => {
+        const env = (typeof command === "string" ? options?.env : command.env) || {};
+        acc[key] = String(env[key]);
+        return acc;
+      }, {})
+    }
   });
-}
 
-export type execOptions = child_process.ExecOptions & {encoding?: BufferEncoding};
-export type newExecOptions = execObject<"noArgs", execOptions>;
-export async function exec(command: string|newExecOptions, options?: execOptions): Promise<childProcessPromise>;
-export async function exec(command: string): Promise<childProcessPromise>;
-export async function exec(command: newExecOptions): Promise<childProcessPromise>;
-export async function exec(command: string|newExecOptions, options?: execOptions): Promise<childProcessPromise> {
-  if (typeof command === "string") {
-    if (!options) options = {};
-    command = {
-      command: command,
-      options: options
-    };
-  }
-  const fixedCommand: newExecOptions = {options: {}, ...command};
-  if (fixedCommand.options.maxBuffer === undefined) fixedCommand.options.maxBuffer = Infinity;
-  fixedCommand.options.env = {...process.env, ...fixedCommand.options?.env};
-  fixedCommand.options.encoding = "binary";
-  return new Promise<childProcessPromise>((done, reject) => {
-    const child = child_process.exec(fixedCommand.command, fixedCommand.options, (err, stdout: Buffer, stderr: Buffer) => {
-      if (err) return reject(new execError(err, child.exitCode, child.exitSignal));
-      done({
-        code: child.exitCode||child.signalCode,
-        pid: child.pid,
-        stderr, stdout
-      });
-    });
-  });
-}
+  // out's
+  if (child.stdout) child.stdout.on("data", data => stdout.push(Buffer.isBuffer(data) ? data : Buffer.from(data)));
+  if (child.stderr) child.stderr.on("data", data => stderr.push(Buffer.isBuffer(data) ? data : Buffer.from(data)));
+  const code = await new Promise<childProcessResult["code"]>((done, reject) => child.on("error", reject).on("cose", (code, signal) => done(code||signal)));
 
-export async function commandExists(command: string): Promise<boolean>;
-export async function commandExists(command: string, returnBoolean: true): Promise<boolean>;
-export async function commandExists(command: string, returnBoolean: false): Promise<string>;
-export async function commandExists(command: string, returnBoolean: boolean = true): Promise<string|boolean> {
-  let location = "";
-  if (path.isAbsolute(command)) if (await extendFs.exists(command)) location = command;
-  else {
-    const commandFind: newExecOptions = {command: `command -v "${command}"`};
-    if (process.platform === "win32") commandFind.command = `where "${command}"`;
-    location = (await exec(commandFind).then(res => res.stdout?.toString("utf8")||res.stderr?.toString("utf8")||"")).trim();
-  }
-  if (returnBoolean) return !!location
-  if (!location) throw new Error("This command not exists or is a shell function");
-  return location;
+  return {
+    stdout: stdout.length > 0 ? Buffer.concat(stdout) : null,
+    stderr: stderr.length > 0 ? Buffer.concat(stderr) : null,
+    pid: child.pid,
+    code,
+  };
 }
