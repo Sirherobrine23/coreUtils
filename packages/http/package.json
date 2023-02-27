@@ -20,9 +20,6 @@
   "keywords": [],
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
-  "workspaces": [
-    "../extends"
-  ],
   "dependencies": {
     "@sirherobrine23/extends": "3.2.6",
     "acme-client": "^5.0.0",

@@ -1,7 +1,7 @@
 import { http } from "@sirherobrine23/http";
 import * as dockerUtils from "./utils.js";
-export * from "./utils.js";
 import stream from "node:stream";
+export {dockerUtils};
 
 const ARCH_GO_NODE: {[arch: string]: string} = {
   x64: "amd64",

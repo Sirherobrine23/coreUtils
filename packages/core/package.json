@@ -21,15 +21,6 @@
   "keywords": [],
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
-  "workspaces": [
-    "../ar",
-    "../cloud",
-    "../debian",
-    "../docker",
-    "../extends",
-    "../http",
-    "../util"
-  ],
   "dependencies": {
     "@sirherobrine23/ar": "3.2.6",
     "@sirherobrine23/basic_utils": "3.2.6",
