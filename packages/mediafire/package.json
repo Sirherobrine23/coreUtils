@@ -23,7 +23,7 @@
   "dependencies": {
     "@sirherobrine23/http": "3.3.0",
     "jsdom": "^21.1.0",
-    "puppeteer": "^19.7.0"
+    "puppeteer": "^19.7.2"
   },
   "devDependencies": {
     "@types/jsdom": "^21.1.0"

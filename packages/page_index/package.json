@@ -27,7 +27,7 @@
   "dependencies": {
     "@sirherobrine23/http": "3.3.0",
     "jsdom": "^21.1.0",
-    "puppeteer": "^19.7.0",
+    "puppeteer": "^19.7.2",
     "yaml": "^2.2.1",
     "yargs": "^17.6.2"
   },
