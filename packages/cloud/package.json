@@ -26,6 +26,6 @@
     "chokidar": "^3.5.3",
     "googleapis": "^110.0.0",
     "oci-common": "^2.50.4",
-    "oci-objectstorage": "^2.51.0"
+    "oci-objectstorage": "^2.53.1"
   }
 }
