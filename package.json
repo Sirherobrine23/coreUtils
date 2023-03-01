@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.1",
-    "@types/node": "^18.13.0",
+    "@types/node": "^18.14.2",
     "@types/semver": "^7.3.13",
     "mocha": "^10.2.0",
     "semver": "^7.3.8",
