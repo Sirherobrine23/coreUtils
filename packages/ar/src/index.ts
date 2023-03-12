@@ -46,7 +46,7 @@ export function createHead(filename: string, info: {mode?: "100644", mtime?: Dat
 export default parse;
 /**
  * Parse ar file and return file stream on entry event
-*
+ *
  * @returns Writable stream to parse ar file
  * @example
   const ar = fs.createReadStream("test.ar").pipe(ar.parse());
