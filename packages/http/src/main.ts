@@ -1,5 +1,5 @@
-import { JSDOM } from "jsdom";
 import gotMain, { Method, Headers, OptionsInit, Request, HTTPError } from "got";
+import { JSDOM } from "jsdom";
 import stream from "node:stream";
 
 const ignoreBody: Method[] = ["GET", "get"];
