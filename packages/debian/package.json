@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/debian",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "",
   "type": "module",
   "main": "src/index.js",
@@ -21,9 +21,9 @@
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
   "dependencies": {
-    "@sirherobrine23/ar": "3.3.0",
-    "@sirherobrine23/extends": "3.3.0",
-    "@sirherobrine23/http": "3.3.0",
+    "@sirherobrine23/ar": "3.4.0",
+    "@sirherobrine23/extends": "3.4.0",
+    "@sirherobrine23/http": "3.4.0",
     "lzma-native": "^8.0.6",
     "unbzip2-stream": "^1.4.3"
   },
