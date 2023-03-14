@@ -188,7 +188,7 @@ export default class createServer {
   // patchs from https://github.com/ErickWendel/websockets-with-nodejs-from-scratch
   async upgradeHandler(req: http.IncomingMessage, socket: stream.Duplex, head: Buffer) {
     const { "sec-websocket-key": webClientSocketKey } = req.headers;
-    const WEBSOCKET_MAGIC_STRING_KEY = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    const WEBSOCKET_MAGIC_STRING_KEY = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     const SEVEN_BITS_INTEGER_MARKER = 125
     const SIXTEEN_BITS_INTEGER_MARKER = 126
     // const SIXTYFOUR_BITS_INTEGER_MARKER = 127
@@ -238,8 +238,33 @@ export default class createServer {
       })([dataFrameBuffer, msg]));
     }
 
-    function unmask(encodedBuffer, maskKey) {
-      const finalBuffer = Buffer.from(encodedBuffer);
+    const acceptKey = crypto.createHash("sha1").update(webClientSocketKey + WEBSOCKET_MAGIC_STRING_KEY).digest("base64");
+    socket.write([
+      "HTTP/1.1 101 Switching Protocols",
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      `Sec-WebSocket-Accept: ${acceptKey}`,
+      ""
+    ].map(line => line.concat("\r\n")).join(""));
+    socket.on("readable", (): any => {
+      // consume optcode (first byte)
+      // 1 - 1 byte - 8bits
+      socket.read(1);
+      const [markerAndPayloadLengh] = socket.read(1)
+      // Because the first bit is always 1 for client-to-server messages
+      // you can subtract one bit (128 or "10000000")
+      // from this byte to get rid of the MASK bit
+      const lengthIndicatorInBits = markerAndPayloadLengh - FIRST_BIT
+      let messageLength = 0;
+      if (lengthIndicatorInBits <= SEVEN_BITS_INTEGER_MARKER) messageLength = lengthIndicatorInBits;
+      else if (lengthIndicatorInBits === SIXTEEN_BITS_INTEGER_MARKER) {
+        // unsigned, big-endian 16-bit integer [0 - 65K] - 2 ** 16
+        messageLength = socket.read(2).readUint16BE(0)
+      } else return socket.end(`your message is too long! we don't handle 64-bit messages`);
+
+      let encodedBuffer = socket.read(messageLength);
+      const maskKey = socket.read(MASK_KEY_BYTES_LENGTH);
+      const decoded = Buffer.from(encodedBuffer);
       // because the maskKey has only 4 bytes
       // index % 4 === 0, 1, 2, 3 = index bits needed to decode the message
 
@@ -253,61 +278,20 @@ export default class createServer {
 
       // (71 ^ 53).toString(2).padStart(8, "0") = "01110010"
       // String.fromCharCode(parseInt("01110010", 2))
-      const fillWithEightZeros = (t) => t.padStart(8, "0")
-      const toBinary = (t) => fillWithEightZeros(t.toString(2))
-      const fromBinaryToDecimal = (t) => parseInt(toBinary(t), 2)
-      const getCharFromBinary = (t) => String.fromCharCode(fromBinaryToDecimal(t))
+      const fillWithEightZeros = (t: string) => t.padStart(8, "0")
+      const toBinary = (t: number) => fillWithEightZeros(t.toString(2))
+      const fromBinaryToDecimal = (t: number) => parseInt(toBinary(t), 2)
+      const getCharFromBinary = (t: number) => String.fromCharCode(fromBinaryToDecimal(t))
 
-      for (let index =0; index< encodedBuffer.length; index++) {
-        finalBuffer[index] = encodedBuffer[index] ^ maskKey[index % MASK_KEY_BYTES_LENGTH];
-
-        const logger = {
-          unmaskingCalc: `${toBinary(encodedBuffer[index])} ^ ${toBinary(maskKey[index % MASK_KEY_BYTES_LENGTH])} = ${toBinary(finalBuffer[index])}`,
-          decoded: getCharFromBinary(finalBuffer[index])
-        }
-        console.log(logger)
+      for (let index = 0; index< encodedBuffer.length; index++) {
+        decoded[index] = encodedBuffer[index] ^ maskKey[index % MASK_KEY_BYTES_LENGTH];
+        console.log({
+          unmaskingCalc: `${toBinary(encodedBuffer[index])} ^ ${toBinary(maskKey[index % MASK_KEY_BYTES_LENGTH])} = ${toBinary(decoded[index])}`,
+          decoded: getCharFromBinary(decoded[index])
+        });
       }
 
-      return finalBuffer
-    }
-
-    function prepareHandShakeHeaders(id: string) {
-      const shaum = crypto.createHash("sha1");
-      shaum.update(id + WEBSOCKET_MAGIC_STRING_KEY);
-      const acceptKey = shaum.digest("base64");
-      const headers = [
-        "HTTP/1.1 101 Switching Protocols",
-        "Upgrade: websocket",
-        "Connection: Upgrade",
-        `Sec-WebSocket-Accept: ${acceptKey}`,
-        ""
-      ].map(line => line.concat("\r\n")).join("");
-      return headers
-    }
-
-
-    socket.write(prepareHandShakeHeaders(webClientSocketKey));
-    socket.on("readable", () => {
-      // consume optcode (first byte)
-      // 1 - 1 byte - 8bits
-      socket.read(1);
-      const [markerAndPayloadLengh] = socket.read(1)
-      // Because the first bit is always 1 for client-to-server messages
-      // you can subtract one bit (128 or "10000000")
-      // from this byte to get rid of the MASK bit
-      const lengthIndicatorInBits = markerAndPayloadLengh - FIRST_BIT
-      let messageLength = 0;
-      if (lengthIndicatorInBits <= SEVEN_BITS_INTEGER_MARKER) messageLength = lengthIndicatorInBits;
-      else if(lengthIndicatorInBits === SIXTEEN_BITS_INTEGER_MARKER) {
-        // unsigned, big-endian 16-bit integer [0 - 65K] - 2 ** 16
-        messageLength = socket.read(2).readUint16BE(0)
-      } else throw new Error(`your message is too long! we don't handle 64-bit messages`)
-
-
-      const maskKey = socket.read(MASK_KEY_BYTES_LENGTH)
-      const encoded = socket.read(messageLength)
-      const decoded = unmask(encoded, maskKey)
-      const received = decoded.toString("utf8")
+      const received = decoded.toString("utf8");
       socket.emit("message", received);
     });
 
@@ -333,7 +317,7 @@ export default class createServer {
     server.once("listening", () => this.address.push(server.address()));
     server.on("error", err => console.error(err));
     server.on("request", (req, res) => this.callHandler(req, res).catch(err => server.emit("error", err)));
-    server.on("upgrade", (req, socket, head) => this.upgradeHandler(req, socket, head));
+    server.on("upgrade", (req, socket, head) => this.upgradeHandler(req, socket, head).catch(err => server.emit("error", err)));
     this.#closeArray.push(() => {server.close()});
     return server;
   }
@@ -342,7 +326,7 @@ export default class createServer {
     server.once("listening", () => this.address.push(server.address()));
     server.on("error", err => console.error(err));
     server.on("request", (req, res) => this.callHandler(req, res).catch(err => server.emit("error", err)));
-    server.on("upgrade", (req, socket, head) => this.upgradeHandler(req, socket, head));
+    server.on("upgrade", (req, socket, head) => this.upgradeHandler(req, socket, head).catch(err => server.emit("error", err)));
     this.#closeArray.push(() => {server.close()});
     return server;
   }
@@ -351,7 +335,7 @@ export default class createServer {
     server.once("listening", () => this.address.push(server.address()));
     server.on("error", err => console.error(err));
     server.on("request", (req, res) => this.callHandler(req, res).catch(err => server.emit("error", err)));
-    server.on("upgrade", (req, socket, head) => this.upgradeHandler(req, socket, head));
+    server.on("upgrade", (req, socket, head) => this.upgradeHandler(req, socket, head).catch(err => server.emit("error", err)));
     this.#closeArray.push(() => {server.close()});
     return server;
   }
@@ -368,11 +352,12 @@ a.add("get", "/", ({req, res}) => {
 });
 
 a.add("wss", (req, socket) => {
+  console.log(req.url);
   socket.on("message", data => {
     console.log(data);
     socket.sendMessage(JSON.stringify({
       message: data,
-      d: new Date()
+      d: new Date(),
     }));
   })
 });
