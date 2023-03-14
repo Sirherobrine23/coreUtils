@@ -12,7 +12,6 @@ const packages = [
   "extends",
   "http",
   "cloud",
-  "mediafire",
   "debian",
   "docker",
   "core"
