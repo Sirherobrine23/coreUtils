@@ -1,364 +1,314 @@
 import { AddressInfo } from "node:net";
-import stream from "node:stream";
-import crypto from "node:crypto";
-import http2 from "node:http2"
+import EventEmitter from "node:events";
+import pathRegex from "path-to-regexp";
+import http2 from "node:http2";
 import https from "node:https";
 import http from "node:http";
-import path from "node:path";
 import yaml from "yaml";
+import path from "node:path";
 
-const WEBSOCKET_MAGIC_STRING_KEY = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-const SEVEN_BITS_INTEGER_MARKER = 125;
-const SIXTEEN_BITS_INTEGER_MARKER = 126;
-// const SIXTYFOUR_BITS_INTEGER_MARKER = 127;
-
-const MAXIMUM_SIXTEEN_BITS_INTEGER = 2 ** 16; // 0 to 65536
-const MASK_KEY_BYTES_LENGTH = 4;
-const OPCODE_TEXT = 0x01; // 1 bit in binary 1
-
-// parseInt('10000000', 2)
-const FIRST_BIT = 128;
-export interface response extends http.ServerResponse<request> {
-  status(code: number): this;
-  streamPipe(data: stream.Readable): this;
-  sendText(data: string): this;
-  json(data: any): this;
-  yaml(data: any): this;
-};
-
-export interface request extends http.IncomingMessage {
+export interface Request extends http.IncomingMessage {
+  res: Response;
+  response: Response;
   req: this;
-  res: response;
-  response: response;
-
-  path: string;
-  query: {[queryName: string]: string};
-  body: any;
-};
-
-export interface wssRequest extends http.IncomingMessage {}
-export interface wssSocket extends stream.Duplex {
-  sendMessage(msg: string): void;
-
-  on(event: "message", fn: (data: string) => void): this;
-  on(event: "close", listener: () => void): this;
-  on(event: "data", listener: (chunk: any) => void): this;
-  on(event: "end", listener: () => void): this;
-  on(event: "error", listener: (err: Error) => void): this;
-  on(event: "pause", listener: () => void): this;
-  on(event: "readable", listener: () => void): this;
-  on(event: "resume", listener: () => void): this;
-  on(event: string | symbol, listener: (...args: any[]) => void): this;
-
-  once(event: "message", fn: (data: string) => void): this;
-  once(event: "close", listener: () => void): this;
-  once(event: "data", listener: (chunk: any) => void): this;
-  once(event: "end", listener: () => void): this;
-  once(event: "error", listener: (err: Error) => void): this;
-  once(event: "pause", listener: () => void): this;
-  once(event: "readable", listener: () => void): this;
-  once(event: "resume", listener: () => void): this;
-  once(event: string | symbol, listener: (...args: any[]) => void): this;
-
-}
-
-export type handler = (req: request, res?: response) => void|any;
-export type wssHandler = (wssRequest: wssRequest, wssSocket: wssSocket) => void|any;
-
-export type requestMethod = "WSS"|"ALL"|"GET"|"POST"|"PUT"|"PATCH"|"HEAD"|"DELETE";
-export default class createServer {
-  public address: (string | AddressInfo)[] = [];
-  public routes: (createServer|{
-    reqMethod: requestMethod,
-    path?: RegExp,
-    call: (handler|wssHandler)[]
-  })[] = [];
+  request: this;
 
   /**
-   * User response error page
-   *
-   * @param err - Error
-   * @param req - Request object
-   * @param res - Response object
-   * @returns end here
+   * Request path, example: "/example"
    */
-  public errorHandler: (err: any, ...args: Parameters<handler>) => void = (err, {res}) => {
-    if (err instanceof Error) {
-      res.json({
-        status: 500,
-        error: err.message,
-        full: {
-          stack: err.stack,
-          stackBreak: !err.stack ? undefined : err.stack.split("\n"),
-          cause: err.cause,
-          causeBreak: !err.cause ? undefined : String(err.cause).split("\n"),
-        }
-      })
-      return;
+  path: string;
+  query: {[queryName: string]: string};
+  params: {[queryName: string]: string};
+}
+
+export interface wssInterface extends EventEmitter {
+  on(event: "message", fn: (data: Buffer) => void): this;
+  on(event: "error", fn: (Err: Error) => void): this;
+  once(event: "message", fn: (data: Buffer) => void): this;
+  once(event: "error", fn: (Err: Error) => void): this;
+
+  sendMessage(msg: string): this;
+}
+
+export interface Response extends http.ServerResponse<Request> {
+  /**
+   * Send JSON object and return Promise to wait connection close
+   */
+  json(data: any, replacerFunc?: (this: any, key: string, value: any) => any): Promise<void>;
+
+  /**
+   * Send yaml from JSON object and return Promise to wait connection close
+   */
+  yaml(data: any): Promise<void>;
+
+  /**
+   * Send string or Buffer with content-length
+   */
+  send(data: string|Buffer): this;
+
+  /**
+   * Set HTTP Status code
+   */
+  status(code: number): this;
+}
+
+export type RouteType = string|RegExp;
+export type handler = (req: Request, res?: Response, next?: (err?: any) => void) => void|Promise<void>;
+
+/**
+ * Create Server to use API routes.
+*/
+class server extends EventEmitter {
+  constructor() {super({captureRejections: true});}
+
+  public jsonSpaces = 2;
+  #genericRoutes: ({
+    is?: "route"|"middle",
+    method?: string,
+    call: handler[],
+    path: RegExp,
+    params?: string[],
+  })[] = [];
+
+  #fixPath(route: RouteType) {
+    const reg: {reg?: RegExp, params: string[]} = {params: []};
+    if (route instanceof RegExp) reg.reg = route;
+    else {
+      route = path.posix.resolve(route);
+      if (route.indexOf(":") !== -1) reg.params = route.split("/").filter(r => r.startsWith(":")).map(r => r.slice(1));
+      reg.reg = pathRegex.pathToRegexp(route);
     }
-    res.json({
-      status: 500,
-      error: err,
-    });
+    return reg;
   }
 
-  public page404: (...args: Parameters<handler>) => void = ({res}) => {
-    res.status(404).json({error: "page not exist!"});
-  }
-
-  public add(method: "WSS"|"wss", path?: string|RegExp|wssHandler, ...fn: (wssHandler)[]): this;
-  public add(method: requestMethod|Lowercase<requestMethod>|createServer, path?: string|RegExp|handler, ...fn: (handler)[]): this;
-  public add(method: requestMethod|Lowercase<requestMethod>|createServer, path?: string|RegExp|handler|wssHandler, ...fn: (handler|wssHandler)[]): this {
-    if (method instanceof createServer) {this.routes.push(method); return this;}
-    if (!(["WSS", "ALL", "GET", "POST", "PUT", "PATCH", "HEAD", "DELETE"]).includes(method = method.toUpperCase() as requestMethod)) throw new TypeError("Invalid method");
-    if (typeof path === "function") {
-      fn = [path, ...fn];
-      path = undefined;
-    } else if (typeof path === "string") {
-      if (!path.startsWith("^")) path = `^${path}`;
-      if (!path.endsWith("$")) path = `${path}$`;
-      path = RegExp(path);
-    }
-    this.routes.push({
-      reqMethod: method,
-      path: path as any,
-      call: fn as handler[]
+  all(path: RouteType, ...handlers: handler[]) {
+    const fixedPath = this.#fixPath(path);
+    this.#genericRoutes.push({
+      call: handlers,
+      path: fixedPath.reg,
+      params: fixedPath.params
     });
     return this;
   }
 
   /**
-   * Space to JSON response
+   *
+   * @param path - endoint path, example: "/google"
+   * @param handlers - callbacks to request
    */
-  public jsonSpace = 2;
+  get(path: RouteType, ...handlers: handler[]) {
+    const fixedPath = this.#fixPath(path);
+    this.#genericRoutes.push({
+      method: "GET",
+      call: handlers,
+      path: fixedPath.reg,
+      params: fixedPath.params
+    });
+    return this;
+  }
 
-  public async callHandler(reqOld: http.IncomingMessage|http2.Http2ServerRequest, resOld: http.ServerResponse<http.IncomingMessage>|http2.Http2ServerResponse) {
-    const res: response = resOld as any;
+  /**
+   *
+   * @param path - endoint path, example: "/google"
+   * @param handlers - callbacks to request
+   */
+  post(path: RouteType, ...handlers: handler[]) {
+    const fixedPath = this.#fixPath(path);
+    this.#genericRoutes.push({
+      method: "POST",
+      call: handlers,
+      path: fixedPath.reg,
+      params: fixedPath.params
+    });
+    return this;
+  }
+
+  /**
+   *
+   * @param path - endoint path, example: "/google"
+   * @param handlers - callbacks to request
+   */
+  put(path: RouteType, ...handlers: handler[]) {
+    const fixedPath = this.#fixPath(path);
+    this.#genericRoutes.push({
+      method: "PUT",
+      call: handlers,
+      path: fixedPath.reg,
+      params: fixedPath.params
+    });
+    return this;
+  }
+
+  /**
+   *
+   * @param path - endoint path, example: "/google"
+   * @param handlers - callbacks to request
+   */
+  delete(path: RouteType, ...handlers: handler[]) {
+    const fixedPath = this.#fixPath(path);
+    this.#genericRoutes.push({
+      method: "DELETE",
+      call: handlers,
+      path: fixedPath.reg,
+      params: fixedPath.params
+    });
+    return this;
+  }
+
+  /**
+   *
+   * @param path - endoint path, example: "/google"
+   * @param handlers - callbacks to request
+   */
+  patch(path: RouteType, ...handlers: handler[]) {
+    const fixedPath = this.#fixPath(path);
+    this.#genericRoutes.push({
+      method: "PATCH",
+      call: handlers,
+      path: fixedPath.reg,
+      params: fixedPath.params
+    });
+    return this;
+  }
+
+  /**
+   *
+   * @param path - endoint path, example: "/google"
+   * @param handlers - callbacks to request
+   */
+  options(path: RouteType, ...handlers: handler[]) {
+    const fixedPath = this.#fixPath(path);
+    this.#genericRoutes.push({
+      method: "OPTIONS",
+      call: handlers,
+      path: fixedPath.reg,
+      params: fixedPath.params
+    });
+    return this;
+  }
+
+  /**
+   *
+   * @param path - endoint path, example: "/google"
+   * @param handlers - callbacks to request
+   */
+  head(path: RouteType, ...handlers: handler[]) {
+    const fixedPath = this.#fixPath(path);
+    this.#genericRoutes.push({
+      method: "HEAD",
+      call: handlers,
+      path: fixedPath.reg,
+      params: fixedPath.params
+    });
+    return this;
+  }
+
+  async #callRequest(rawRequest: http.IncomingMessage|http2.Http2ServerRequest|Request, rawResponse: http.ServerResponse|http2.Http2ServerResponse|Response) {
+    // Update Response object
+    const res: Response = rawResponse as any;
     res.status ??= (code) => {res.statusCode = code; return res;}
-    res.streamPipe ??= (stream) => {
-      Promise.resolve(stream).then(str => str.pipe(res.writeHead(res.statusCode ?? 200, {}))).then(() => {});
-      return res;
-    };
-    res.sendText ??= (data) => {
-      res.writeHead(res.statusCode ?? 200, {
-        "content-length": Buffer.byteLength(data)
-      });
-      return res.end(data);
-    };
-    res.json ??= (data) => {
-      res.setHeader("content-type", "application/json").sendText(JSON.stringify(data, (_, value) => {
-        if (typeof value === "bigint") return value.toString();
-        return value;
-      }, this.jsonSpace));
-      return res;
-    };
-    res.yaml ??= (data) => {
-      res.setHeader("content-type", "text/vnd.yaml, text/yaml, text/x-yaml").sendText(yaml.stringify(data));
-      return res;
-    }
+    res.send ??= (data) => res.writeHead(res.statusCode ?? 200, {"content-length": String(Buffer.byteLength(data))}).end(data);
+    res.json ??= async (data, replacerFunc = null) => new Promise<void>((done, reject) => res.once("error", reject).setHeader("content-type", "application/json").send(JSON.stringify(data, replacerFunc, this.jsonSpaces)).once("close", () => done()));
+    res.yaml ??= async (data) => new Promise<void>((done, reject) => res.on("error", reject).setHeader("content-type", "text/yaml, text/x-yaml").send(yaml.stringify(data)).on("close", () => done()));
 
-    // Patch to request
-    const req: request = reqOld as any;
-    const requestPath = new URL(reqOld.url, "http://localhost");
-    req.path ??= path.posix.resolve("/", requestPath.pathname);
-    req.query ??= Array.from(requestPath.searchParams.keys()).reduce((acc, key) => {
-      acc[key] = requestPath.searchParams.get(key);
-      return acc;
-    }, {});
+    const req: Request = rawRequest as any;
+    req.params = {};
+    req.path ??= (() => {
+      if (!req.url) return "/";
+      const d = new URL(req.url, "http://local.com");
+      return path.posix.resolve("/", d.pathname);
+    })();
+    req.query ??= (() => {
+      if (!req.url) return {};
+      const d = new URL(req.url, "http://local.com");
+      return Array.from(d.searchParams.keys()).reduce((acc, key) => {
+        acc[key] = d.searchParams.get(key);
+        return acc;
+      }, {});
+    })();
 
     req.res = req.response = res;
-    req.req = req;
-    req["run404"] = true;
+    req.request = req.req = req;
 
-    console.debug("Request from %O", req.path, req.method);
-    for (const route of this.routes) {
-      if (!res.writable) break;
-      if (route instanceof createServer) await route.callHandler(req, res);
-      else {
-        if (route.reqMethod === "WSS") continue;
-        else if (route.reqMethod !== "ALL") if (route.reqMethod !== req.method) continue;
-        if (route.path) if (!route.path.test(req.path)) continue;
-        req["run404"] = false;
-        for (const handler of route.call) {
-          const resData = await Promise.resolve().then(() => handler(req, res as any)).then(() => null).catch(err => err);
-          if (!res.writable) break;
-          if (resData !== null) {
-            if (res.writable) {
-              try {
-                this.errorHandler(resData, req, res);
-              } catch {}
+    const routes = this.#genericRoutes.filter(r => ((r.is || "route") === "route") && (!r.method ? true : rawRequest.method === r.method)).filter(call => call.path.test(String(req.path)));
+    let call = routes.shift();
+    let writable = true;
+    let emit404 = true;
+    while (!!call && !res.closed && writable) {
+      req.params = {};
+      if (call.params?.length > 0) {
+        const match = call.path.exec(req.path);
+        call.params.forEach((value, index) => req.params[value] = match[index+1]);
+      }
+      for (const callFunc of call.call) {
+        if (res.closed) break;
+        emit404 = false;
+        const next = new Promise<boolean>((done) => {
+          const next = (err?: any) => {
+            if (this["closeEvent"]) {
+              writable = false;
+              return done(false);
+            } else if (!err) return done(true);
+
+            if (res.closed) super.emit("error", err);
+            else {
+              res.status(500).json({
+                error: String(err?.message || err),
+                stack: err?.stack
+              });
             }
-            break;
+            writable = false;
+            return done(false);
           }
-        }
+          req.once("close", () => next.call({closeEvent: true}));
+          return Promise.resolve().then(() => res.writable ? callFunc(req, res, next) : next.call({closeEvent: true})).catch(next);
+        });
+        if (await next) continue;
+        break;
       }
-    }
-    if (req["run404"]) this.page404(req, res);
-  }
-
-
-
-  // patchs from https://github.com/ErickWendel/websockets-with-nodejs-from-scratch
-  async upgradeHandler(req: http.IncomingMessage, socket: stream.Duplex, head: Buffer) {
-    const { "sec-websocket-key": webClientSocketKey } = req.headers;
-    console.log(`${webClientSocketKey} connected!`)
-    socket.write(([
-      "HTTP/1.1 101 Switching Protocols",
-      "Upgrade: websocket",
-      "Connection: Upgrade",
-      `Sec-WebSocket-Accept: ${crypto.createHash("sha1").update(webClientSocketKey + WEBSOCKET_MAGIC_STRING_KEY).digest("base64")}`,
-      ""
-    ]).map(line => line.concat("\r\n")).join(""));
-
-    function sendMessage(messageString: string) {
-      const msg = Buffer.from(messageString);
-      const messageSize = msg.length
-      let dataFrameBuffer: Buffer;
-
-      // 0x80 === 128 in binary
-      // '0x' +  Math.abs(128).toString(16) == 0x80
-      const firstByte = 0x80 | OPCODE_TEXT // single frame + text
-      if (messageSize <= SEVEN_BITS_INTEGER_MARKER) {
-        const bytes = [firstByte]
-        dataFrameBuffer = Buffer.from(bytes.concat(messageSize))
-      } else if (messageSize <= MAXIMUM_SIXTEEN_BITS_INTEGER ) {
-        const offsetFourBytes = 4
-        const target = Buffer.allocUnsafe(offsetFourBytes)
-        target[0] = firstByte
-        target[1] = SIXTEEN_BITS_INTEGER_MARKER | 0x0 // just to know the mask
-
-        target.writeUint16BE(messageSize, 2) // content lenght is 2 bytes
-        dataFrameBuffer = target
-
-        // alloc 4 bytes
-        // [0] - 128 + 1 - 10000001  fin + opcode
-        // [1] - 126 + 0 - payload length marker + mask indicator
-        // [2] 0 - content length
-        // [3] 113 - content length
-        // [ 4 - ..] - the message itself
-      } else throw new Error("message too long buddy :(");
-      const totalLength = dataFrameBuffer.byteLength + messageSize;
-      const target = Buffer.allocUnsafe(totalLength);
-      let offset = 0;
-      for (const localBuffer of ([dataFrameBuffer, msg])) {
-        target.set(localBuffer, offset);
-        offset += localBuffer.length;
-      }
-      socket.write(target);
+      call = routes.shift();
     }
 
-    socket.on("readable", () => {
-      // consume optcode (first byte)
-      // 1 - 1 byte - 8bits
-      socket.read(1);
-
-      const [markerAndPayloadLengh] = socket.read(1)
-      // Because the first bit is always 1 for client-to-server messages
-      // you can subtract one bit (128 or '10000000')
-      // from this byte to get rid of the MASK bit
-      const lengthIndicatorInBits = markerAndPayloadLengh - FIRST_BIT;
-
-      let messageLength = 0;
-      if (lengthIndicatorInBits <= SEVEN_BITS_INTEGER_MARKER) messageLength = lengthIndicatorInBits;
-      else if (lengthIndicatorInBits === SIXTEEN_BITS_INTEGER_MARKER) {
-        // unsigned, big-endian 16-bit integer [0 - 65K] - 2 ** 16
-        messageLength = socket.read(2).readUint16BE(0)
-      } else {
-        // 0, 0, 0, 0, 0, 1, 0, 0
-        // socket.read(8);
-        // messageLength = lengthIndicatorInBits;
-        // throw new Error(`your message is too long! we don't handle 64-bit messages`);
-        socket.end(`your message is too long! we don't handle 64-bit messages`);
-        return;
-      }
-
-      let maskKey = socket.read(MASK_KEY_BYTES_LENGTH);
-      let encoded = socket.read(messageLength);
-
-      // Unmask
-      let decoded = Buffer.from(encoded || []);
-      // because the maskKey has only 4 bytes
-      // index % 4 === 0, 1, 2, 3 = index bits needed to decode the message
-
-      // XOR  ^
-      // returns 1 if both are different
-      // returns 0 if both are equal
-
-      // (71).toString(2).padStart(8, "0") = 0 1 0 0 0 1 1 1
-      // (53).toString(2).padStart(8, "0") = 0 0 1 1 0 1 0 1
-      //                                     0 1 1 1 0 0 1 0
-
-      // (71 ^ 53).toString(2).padStart(8, "0") = '01110010'
-      // String.fromCharCode(parseInt('01110010', 2))
-      for (let index = 0; index < encoded?.length; index++) decoded[index] = encoded[index] ^ maskKey[index % MASK_KEY_BYTES_LENGTH];
-
-      // Decode
-      socket.emit("message", decoded.toString("utf8"));
-    });
-
-    const wssReq: wssRequest = req as any;
-    const wssSocket: wssSocket = socket as any;
-    wssSocket.sendMessage = sendMessage;
-    for (const route of this.routes) {
-      if (route instanceof createServer) await route.upgradeHandler(req, socket, head);
-      else {
-        if (route.reqMethod !== "WSS") continue;
-        for (const call of route.call) call(wssReq as any, wssSocket as any);
-      }
-    }
+    if (!res.closed && emit404) res.status(404).json({error: "endpoint not registred"});
   }
 
-  #closeArray: (() => void)[] = [];
-  public close() {
-    this.#closeArray.forEach(k => k());
-  }
+  servers: (http.Server|null)[] = [];
+  serverAddress: (string | AddressInfo)[] = [];
 
-  public httpListen(...args: Parameters<http.Server["listen"]>) {
-    const server = http.createServer().listen(...args);
-    server.once("listening", () => this.address.push(server.address()));
-    server.on("error", err => console.error(err));
-    server.on("request", (req, res) => this.callHandler(req, res).catch(err => server.emit("error", err)));
-    server.on("upgrade", (req, socket, head) => this.upgradeHandler(req, socket, head).catch(err => server.emit("error", err)));
-    this.#closeArray.push(() => {server.close()});
-    return server;
-  }
-  public httpsListen(options: https.ServerOptions, ...args: Parameters<https.Server["listen"]>) {
-    const server = https.createServer(options).listen(...args);
-    server.once("listening", () => this.address.push(server.address()));
-    server.on("error", err => console.error(err));
-    server.on("request", (req, res) => this.callHandler(req, res).catch(err => server.emit("error", err)));
-    server.on("upgrade", (req, socket, head) => this.upgradeHandler(req, socket, head).catch(err => server.emit("error", err)));
-    this.#closeArray.push(() => {server.close()});
-    return server;
-  }
-  public http2Listen(options: http2.SecureServerOptions & {secureServer?: boolean}, ...args: Parameters<(http2.Http2SecureServer|http2.Http2Server)["listen"]>) {
-    const server = (options.secureServer ? http2.createSecureServer(options) : http2.createServer()).listen(...args);
-    server.once("listening", () => this.address.push(server.address()));
-    server.on("error", err => console.error(err));
-    server.on("request", (req, res) => this.callHandler(req, res).catch(err => server.emit("error", err)));
-    server.on("upgrade", (req, socket, head) => this.upgradeHandler(req, socket, head).catch(err => server.emit("error", err)));
-    this.#closeArray.push(() => {server.close()});
+  /**
+   * Listen HTTP2 server or HTTP2 Secure Server
+   */
+  listen(is: "http2", secureServer?: boolean, ...args: Parameters<http2.Http2Server["listen"]>): http2.Http2Server;
+
+  /**
+   * Listen HTTPs server to Secure Connections
+   */
+  listen(is: "https", options: https.ServerOptions, ...args: Parameters<https.Server["listen"]>): https.Server;
+
+  /**
+   * Listen HTTP Server
+   */
+  listen(is: "http", ...args: Parameters<http.Server["listen"]>): http.Server;
+  /**
+   * Listen HTTP Server
+   */
+  listen(): http.Server;
+  listen(is?: "http"|"https"|"http2", ...args: any[]) {
+    let server: http.Server|https.Server|http2.Http2Server;
+    if (is === "http2") server = (args.shift() ? http2.createSecureServer : http2.createServer)();
+    else if (is === "https") server = https.createServer(args.shift());
+    else server = http.createServer();
+
+    server.on("error", err => this.emit("error", err));
+    server.on("request", (...args) => this.#callRequest(...args));
+    // server.on("upgrade", (...args) => this.#callUpgrade(...args));
+    server.on("listening", () => this.serverAddress.push(server.address()));
+    server.listen(...args);
     return server;
   }
 }
 
-const a = new createServer();
-a.httpListen(3000);
-a.add("get", "/", ({req, res}) => {
-  (req.query.type === "json" ? res.json : res.yaml)({
-    ok: true,
-    header: req.headers,
-    body: req.body
-  });
-});
-
-a.add("wss", (req, socket) => {
-  console.log(req.url);
-  socket.on("message", data => {
-    console.log(data);
-    socket.sendMessage(JSON.stringify({
-      message: data,
-      d: new Date(),
-    }));
-  })
-});
+/**
+ * Create similiar Express http server
+ */
+export function createRoute() {return new server();}
