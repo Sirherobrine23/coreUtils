@@ -1,6 +1,6 @@
 import { AddressInfo } from "node:net";
 import EventEmitter from "node:events";
-import pathRegex from "path-to-regexp";
+// import pathRegex from "path-to-regexp";
 import http2 from "node:http2";
 import https from "node:https";
 import http from "node:http";
@@ -12,6 +12,9 @@ export interface Request extends http.IncomingMessage {
   response: Response;
   req: this;
   request: this;
+
+  /** Request Protocol */
+  protocol: "http"|"https"|"http2";
 
   /**
    * Request path, example: "/example"
@@ -26,7 +29,6 @@ export interface wssInterface extends EventEmitter {
   on(event: "error", fn: (Err: Error) => void): this;
   once(event: "message", fn: (data: Buffer) => void): this;
   once(event: "error", fn: (Err: Error) => void): this;
-
   sendMessage(msg: string): this;
 }
 
@@ -52,8 +54,7 @@ export interface Response extends http.ServerResponse<Request> {
   status(code: number): this;
 }
 
-export type RouteType = string|RegExp;
-export type handler = (req: Request, res?: Response, next?: (err?: any) => void) => void|Promise<void>;
+export type handler = (this: server, req: Request, res?: Response, next?: (err?: any) => void) => void|Promise<void>;
 
 /**
  * Create Server to use API routes.
@@ -62,32 +63,23 @@ class server extends EventEmitter {
   constructor() {super({captureRejections: true});}
 
   public jsonSpaces = 2;
-  #genericRoutes: ({
-    is?: "route"|"middle",
-    method?: string,
-    call: handler[],
-    path: RegExp,
-    params?: string[],
-  })[] = [];
 
-  #fixPath(route: RouteType) {
-    const reg: {reg?: RegExp, params: string[]} = {params: []};
-    if (route instanceof RegExp) reg.reg = route;
-    else {
-      route = path.posix.resolve(route);
-      if (route.indexOf(":") !== -1) reg.params = route.split("/").filter(r => r.startsWith(":")).map(r => r.slice(1));
-      reg.reg = pathRegex.pathToRegexp(route);
-    }
-    return reg;
+  route_registred: {[path: string]: {method: string, fn: handler[]}[]} = {};
+  #registerRoute(method: string, requestPath: string, ...fn: handler[]) {
+    method = method.toUpperCase();
+    const posixFix = (!requestPath) ? "/*" : path.posix.resolve("/", requestPath);
+    if (!(this.route_registred[posixFix])) this.route_registred[posixFix] = [];
+    this.route_registred[posixFix].push(({
+      method,
+      fn,
+    }));
   }
 
-  all(path: RouteType, ...handlers: handler[]) {
-    const fixedPath = this.#fixPath(path);
-    this.#genericRoutes.push({
-      call: handlers,
-      path: fixedPath.reg,
-      params: fixedPath.params
-    });
+  /**
+   * Create handler for all methods
+   */
+  all(path: string, ...handlers: handler[]) {
+    this.#registerRoute("ALL", path, ...handlers);
     return this;
   }
 
@@ -96,14 +88,8 @@ class server extends EventEmitter {
    * @param path - endoint path, example: "/google"
    * @param handlers - callbacks to request
    */
-  get(path: RouteType, ...handlers: handler[]) {
-    const fixedPath = this.#fixPath(path);
-    this.#genericRoutes.push({
-      method: "GET",
-      call: handlers,
-      path: fixedPath.reg,
-      params: fixedPath.params
-    });
+  get(path: string, ...handlers: handler[]) {
+    this.#registerRoute("GET", path, ...handlers);
     return this;
   }
 
@@ -112,14 +98,8 @@ class server extends EventEmitter {
    * @param path - endoint path, example: "/google"
    * @param handlers - callbacks to request
    */
-  post(path: RouteType, ...handlers: handler[]) {
-    const fixedPath = this.#fixPath(path);
-    this.#genericRoutes.push({
-      method: "POST",
-      call: handlers,
-      path: fixedPath.reg,
-      params: fixedPath.params
-    });
+  post(path: string, ...handlers: handler[]) {
+    this.#registerRoute("POST", path, ...handlers);
     return this;
   }
 
@@ -128,14 +108,8 @@ class server extends EventEmitter {
    * @param path - endoint path, example: "/google"
    * @param handlers - callbacks to request
    */
-  put(path: RouteType, ...handlers: handler[]) {
-    const fixedPath = this.#fixPath(path);
-    this.#genericRoutes.push({
-      method: "PUT",
-      call: handlers,
-      path: fixedPath.reg,
-      params: fixedPath.params
-    });
+  put(path: string, ...handlers: handler[]) {
+    this.#registerRoute("PUT", path, ...handlers);
     return this;
   }
 
@@ -144,14 +118,8 @@ class server extends EventEmitter {
    * @param path - endoint path, example: "/google"
    * @param handlers - callbacks to request
    */
-  delete(path: RouteType, ...handlers: handler[]) {
-    const fixedPath = this.#fixPath(path);
-    this.#genericRoutes.push({
-      method: "DELETE",
-      call: handlers,
-      path: fixedPath.reg,
-      params: fixedPath.params
-    });
+  delete(path: string, ...handlers: handler[]) {
+    this.#registerRoute("DELETE", path, ...handlers);
     return this;
   }
 
@@ -160,14 +128,8 @@ class server extends EventEmitter {
    * @param path - endoint path, example: "/google"
    * @param handlers - callbacks to request
    */
-  patch(path: RouteType, ...handlers: handler[]) {
-    const fixedPath = this.#fixPath(path);
-    this.#genericRoutes.push({
-      method: "PATCH",
-      call: handlers,
-      path: fixedPath.reg,
-      params: fixedPath.params
-    });
+  patch(path: string, ...handlers: handler[]) {
+    this.#registerRoute("PATCH", path, ...handlers);
     return this;
   }
 
@@ -176,14 +138,8 @@ class server extends EventEmitter {
    * @param path - endoint path, example: "/google"
    * @param handlers - callbacks to request
    */
-  options(path: RouteType, ...handlers: handler[]) {
-    const fixedPath = this.#fixPath(path);
-    this.#genericRoutes.push({
-      method: "OPTIONS",
-      call: handlers,
-      path: fixedPath.reg,
-      params: fixedPath.params
-    });
+  options(path: string, ...handlers: handler[]) {
+    this.#registerRoute("OPTIONS", path, ...handlers);
     return this;
   }
 
@@ -192,14 +148,8 @@ class server extends EventEmitter {
    * @param path - endoint path, example: "/google"
    * @param handlers - callbacks to request
    */
-  head(path: RouteType, ...handlers: handler[]) {
-    const fixedPath = this.#fixPath(path);
-    this.#genericRoutes.push({
-      method: "HEAD",
-      call: handlers,
-      path: fixedPath.reg,
-      params: fixedPath.params
-    });
+  head(path: string, ...handlers: handler[]) {
+    this.#registerRoute("HEAD", path, ...handlers);
     return this;
   }
 
@@ -213,34 +163,56 @@ class server extends EventEmitter {
 
     const req: Request = rawRequest as any;
     req.params = {};
+    const { host } = req.headers || {};
     req.path ??= (() => {
       if (!req.url) return "/";
-      const d = new URL(req.url, "http://local.com");
-      return path.posix.resolve("/", d.pathname);
+      const d = new URL(req.url, "http://"+(host || "localhost.com"));
+      return path.posix.resolve("/", decodeURIComponent(d.pathname));
     })();
     req.query ??= (() => {
       if (!req.url) return {};
-      const d = new URL(req.url, "http://local.com");
+      const d = new URL(req.url, "http://"+(host || "localhost.com"));
       return Array.from(d.searchParams.keys()).reduce((acc, key) => {
         acc[key] = d.searchParams.get(key);
         return acc;
       }, {});
     })();
 
+    // Inject Request and Response
     req.res = req.response = res;
     req.request = req.req = req;
 
-    const routes = this.#genericRoutes.filter(r => ((r.is || "route") === "route") && (!r.method ? true : rawRequest.method === r.method)).filter(call => call.path.test(String(req.path)));
+    const splitedRequestPath = String(req.path).split("/");
+    const routes = Object.keys(this.route_registred).map(key => {
+      const fn = this.route_registred[key].filter(d => d.method === req.method || d.method === "ALL");
+      if (!fn.length) return null;
+      const splitedRegistredPath = key.split("/");
+      const params: {pararm: string, value: string}[] = [];
+      for (const kIndex in splitedRequestPath) {
+        if (splitedRegistredPath[kIndex] === undefined) return null;
+        else if (splitedRegistredPath[kIndex].startsWith(":")) {
+          params.push({
+            pararm: splitedRegistredPath[kIndex].slice(1),
+            value: splitedRequestPath[kIndex],
+          });
+        } else if (splitedRegistredPath[kIndex] !== splitedRequestPath[kIndex]) {
+          if (splitedRegistredPath[kIndex] === "*") break;
+          return null;
+        }
+      }
+      return {
+        params,
+        fn
+      };
+    }).filter(Boolean);
+
     let call = routes.shift();
     let writable = true;
     let emit404 = true;
     while (!!call && !res.closed && writable) {
       req.params = {};
-      if (call.params?.length > 0) {
-        const match = call.path.exec(req.path);
-        call.params.forEach((value, index) => req.params[value] = match[index+1]);
-      }
-      for (const callFunc of call.call) {
+      call.params.forEach(d => req.params[d.pararm] = d.value);
+      for (const callFunc of call.fn.map(({fn}) => fn).flat()) {
         if (res.closed) break;
         emit404 = false;
         const next = new Promise<boolean>((done) => {
@@ -261,7 +233,7 @@ class server extends EventEmitter {
             return done(false);
           }
           req.once("close", () => next.call({closeEvent: true}));
-          return Promise.resolve().then(() => res.writable ? callFunc(req, res, next) : next.call({closeEvent: true})).catch(next);
+          return Promise.resolve().then(() => res.writable ? callFunc.call(this, req, res, next) : next.call({closeEvent: true})).catch(next);
         });
         if (await next) continue;
         break;
@@ -269,7 +241,10 @@ class server extends EventEmitter {
       call = routes.shift();
     }
 
-    if (!res.closed && emit404) res.status(404).json({error: "endpoint not registred"});
+    if (!res.closed && emit404) res.status(404).json({
+      error: "endpoint not registred",
+      routes: this.route_registred
+    });
   }
 
   servers: (http.Server|null)[] = [];
@@ -293,15 +268,21 @@ class server extends EventEmitter {
    * Listen HTTP Server
    */
   listen(): http.Server;
-  listen(is?: "http"|"https"|"http2", ...args: any[]) {
+  listen(is?: Request["protocol"], ...args: any[]) {
     let server: http.Server|https.Server|http2.Http2Server;
     if (is === "http2") server = (args.shift() ? http2.createSecureServer : http2.createServer)();
     else if (is === "https") server = https.createServer(args.shift());
-    else server = http.createServer();
+    else {
+      server = http.createServer();
+      is = "http";
+    }
 
     server.on("error", err => this.emit("error", err));
-    server.on("request", (...args) => this.#callRequest(...args));
     // server.on("upgrade", (...args) => this.#callUpgrade(...args));
+    server.on("request", (req, res) => {
+      req["protocol"] = is;
+      this.#callRequest(req, res);
+    });
     server.on("listening", () => this.serverAddress.push(server.address()));
     server.listen(...args);
     return server;

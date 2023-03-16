@@ -1,22 +1,15 @@
 import { createRoute } from "../src/server.js";
 const app = createRoute();
-app.get("/", (req, res, next) => {
-  res.json({
-    head: req.headers,
-    path: req.path,
-    next: typeof next
-  });
+
+app.get("__route", function ({res}) {
+  res.json(this.route_registred);
 });
-app.get("/:id/:id2", (req, res, next) => {
-  req["test"] = "Hello from object inject";
-  if (req.query.throw) throw new Error(req.query.throw);
-  return next();
-}, (req, res) => {
-  res.json({
-    testText: req["test"],
+
+app.all("*", (req, res, next) => {
+  return res.json({
+    method: req.method,
     path: req.path,
-    parms: req.params,
-    query: req.query,
+    protocol: req.protocol,
     head: req.headers,
   });
 });
