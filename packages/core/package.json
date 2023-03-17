@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/coreutils",
-  "version": "3.4.1",
+  "version": "3.4.2",
   "description": "This is a simple project to bring together and facilitate some simple resources from the world of Nodejs and Typescript.",
   "type": "module",
   "main": "src/index.js",
@@ -22,12 +22,12 @@
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
   "dependencies": {
-    "@sirherobrine23/ar": "3.4.1",
-    "@sirherobrine23/basic_utils": "3.4.1",
-    "@sirherobrine23/cloud": "3.4.1",
-    "@sirherobrine23/debian": "3.4.1",
-    "@sirherobrine23/docker-registry": "3.4.1",
-    "@sirherobrine23/extends": "3.4.1",
-    "@sirherobrine23/http": "3.4.1"
+    "@sirherobrine23/ar": "3.4.2",
+    "@sirherobrine23/basic_utils": "3.4.2",
+    "@sirherobrine23/cloud": "3.4.2",
+    "@sirherobrine23/debian": "3.4.2",
+    "@sirherobrine23/docker-registry": "3.4.2",
+    "@sirherobrine23/extends": "3.4.2",
+    "@sirherobrine23/http": "3.4.2"
   }
 }
