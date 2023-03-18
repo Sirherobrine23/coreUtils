@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/docker-registry",
-  "version": "3.4.2",
+  "version": "3.4.3",
   "description": "",
   "type": "module",
   "main": "src/index.js",
@@ -21,6 +21,6 @@
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
   "dependencies": {
-    "@sirherobrine23/http": "3.4.2"
+    "@sirherobrine23/http": "3.4.3"
   }
 }
