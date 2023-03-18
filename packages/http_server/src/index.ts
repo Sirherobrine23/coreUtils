@@ -1,11 +1,24 @@
-import { AddressInfo } from "node:net";
+import { AddressInfo, isIPv4 } from "node:net";
 import EventEmitter from "node:events";
-// import pathRegex from "path-to-regexp";
 import http2 from "node:http2";
 import https from "node:https";
 import http from "node:http";
-import yaml from "yaml";
 import path from "node:path";
+import yaml from "yaml";
+
+interface createRoute {
+  Route: typeof createRoute
+}
+
+/**
+ * Create similiar Express http server
+ */
+function createRoute() {
+  return new server();
+}
+createRoute.Route = createRoute;
+export {createRoute};
+export default createRoute;
 
 export interface Request extends http.IncomingMessage {
   res: Response;
@@ -13,8 +26,17 @@ export interface Request extends http.IncomingMessage {
   req: this;
   request: this;
 
+  /** Client IP */
+  ip?: string;
+
+  /** Client port */
+  port?: number
+
   /** Request Protocol */
   protocol: "http"|"https"|"http2";
+
+  /** Request body */
+  body?: any;
 
   /**
    * Request path, example: "/example"
@@ -22,14 +44,6 @@ export interface Request extends http.IncomingMessage {
   path: string;
   query: {[queryName: string]: string};
   params: {[queryName: string]: string};
-}
-
-export interface wssInterface extends EventEmitter {
-  on(event: "message", fn: (data: Buffer) => void): this;
-  on(event: "error", fn: (Err: Error) => void): this;
-  once(event: "message", fn: (data: Buffer) => void): this;
-  once(event: "error", fn: (Err: Error) => void): this;
-  sendMessage(msg: string): this;
 }
 
 export interface Response extends http.ServerResponse<Request> {
@@ -55,7 +69,7 @@ export interface Response extends http.ServerResponse<Request> {
 }
 
 export type handler = (this: server, req: Request, res?: Response, next?: (err?: any) => void) => void|Promise<void>;
-export type errorHandler = (this: server, error: Error, req: Request, res: Response, next: (err?: any) => void) => void|Promise<void>;
+export type errorHandler = (error: Error, req: Request, res: Response, next: (err?: any) => void) => void|Promise<void>;
 
 /**
  * Create Server to use API routes.
@@ -215,23 +229,38 @@ class server extends EventEmitter {
       return res;
     };
 
-    res.json ??= async (data, replacerFunc = null) => new Promise<void>((done, reject) => res.once("error", reject).setHeader("content-type", "application/json").send(JSON.stringify(data, replacerFunc, this.jsonSpaces)).once("close", () => done()));
     res.yaml ??= async (data) => new Promise<void>((done, reject) => res.on("error", reject).setHeader("content-type", "text/yaml, text/x-yaml").send(yaml.stringify(data)).on("close", () => done()));
+    res.json ??= async (data, replacerFunc = null) => new Promise<void>((done, reject) => res.once("error", reject).setHeader("content-type", "application/json").send(JSON.stringify(data, replacerFunc, this.jsonSpaces)).once("close", () => done()));
 
     const req: Request = rawRequest as any;
     req.params ??= {};
+    req.headers ??= {};
 
-    const { host } = req.headers || {};
+    req.port = (req.connection?.remotePort || req.socket?.remotePort);
+    req.ip = (req.connection?.remoteAddress || req.socket?.remoteAddress);
+    if (!req.ip) {
+      const connectionHead = req.headers["X-Client-IP"] || req.headers["X-Forwarded-For"] || req.headers["CF-Connecting-IP"] || req.headers["Fastly-Client-Ip"] || req.headers["True-Client-Ip"] || req.headers["X-Real-IP"] || req.headers["X-Cluster-Client-IP"] || req.headers["X-Forwarded"] || req.headers["Forwarded-For"] || req.headers["Forwarded"];
+      if (connectionHead) {
+        if (Array.isArray(connectionHead)) req.ip = req.ip = String(connectionHead.at(-1));
+        else req.ip = req.ip = String(connectionHead);
+      } else req.ip = ""
+    }
 
+    let headHost = req.headers.host;
+    if (!headHost) {
+      const soc = req.socket || req.connection;
+      if (isIPv4(req.ip.replace("::ffff:", ""))) headHost = req.ip.replace("::ffff:", "")+":"+soc.localPort;
+      else headHost = `[${req.ip}]:${soc.localPort}`;
+    }
     req.path ??= (() => {
       if (!req.url) return "/";
-      const d = new URL(req.url, "http://"+(host || "localhost.com"));
+      const d = new URL(req.url, "http://"+(headHost || "localhost.com"));
       return path.posix.resolve("/", decodeURIComponent(d.pathname));
     })();
 
     req.query ??= (() => {
       if (!req.url) return {};
-      const d = new URL(req.url, "http://"+(host || "localhost.com"));
+      const d = new URL(req.url, "http://"+(headHost || "localhost.com"));
       return Array.from(d.searchParams.keys()).reduce((acc, key) => {
         acc[key] = d.searchParams.get(key);
         return acc;
@@ -241,113 +270,107 @@ class server extends EventEmitter {
     // Inject Request and Response
     req.res = req.response = res;
     req.request = req.req = req;
+    if (req["allow404"] === undefined) req["allow404"] = true;
 
-    const splitedRequestPath = String(req.path).split("/");
-    const routes = this.route_registred.map(route => {
-      const ret: {params: {pararm: string, value: string}[], route: typeof route} = {params: [], route};
+    const reqPathSplit = String(req.path).split("/");
+    const routes = (await Promise.all(this.route_registred.map(async route => {
+      const ret: {params: {[name: string]: string}, route: typeof route} = {params: {}, route};
       if (!((route.is === "middle") || (route.method === req.method || route.method === "ALL"))) return null;
-
       // return if middle and not include path
       if (route.is === "middle") if (!route.path) return ret;
-
       const splitedRegistredPath = route.path.split("/");
-      for (const kIndex in splitedRequestPath) {
+      console.log(reqPathSplit, splitedRegistredPath);
+
+      for (const kIndex in reqPathSplit) {
         if (splitedRegistredPath[kIndex] === undefined) {
           if (route.is === "middle") break;
           return null;
-        } else if (splitedRegistredPath[kIndex].startsWith(":")) {
-          ret.params.push({
-            pararm: splitedRegistredPath[kIndex].slice(1),
-            value: splitedRequestPath[kIndex],
-          });
-        } else if (splitedRegistredPath[kIndex] !== splitedRequestPath[kIndex]) {
-          if (splitedRegistredPath[kIndex] === "*") break;
-          return null;
-        }
+        } else if (splitedRegistredPath[kIndex].startsWith(":")) ret.params[splitedRegistredPath[kIndex].slice(1).trim()] = reqPathSplit[kIndex];
+        else if (splitedRegistredPath[kIndex] === "*") break;
+        else if (splitedRegistredPath[kIndex] !== reqPathSplit[kIndex]) return null;
       }
       return ret;
-    }).filter(Boolean);
+    }))).filter(Boolean);
 
-    let call = routes.shift();
-    let writable = true;
-    let emit404 = true;
-    const initParms = Object(req.params);
-    const pathBackup = String(req.path);
-    while (!!call && !res.closed && writable) {
-      const params = {};
-      call.params.forEach(d => params[d.pararm] = d.value);
-      req.params = Object.assign(initParms, params);
-      for (const route of (call.route.is === "route" ? call.route.fn : call.route.middle)) {
-        if (res.closed) break;
-        req.path = pathBackup;
+    let page404: handler;
+    if (req["allow404"]) page404 = this.route_registred.reduceRight((acc, r) => {
+      if (acc) return acc;
+      if (r instanceof server) return acc;
+      else if (r.is === "middle") return acc;
+      else if (r.path !== "*") return acc;
+      else if (r.method !== "ALL") return acc;
+      const find = r.fn.find(fn => fn.length < 4);
+      if (find) return find;
+      return acc;
+    }, null) as handler ?? function (req, res, next) {
+      return res.status(404).json({
+        error: "Page not exists",
+        path: req.path,
+        params: req.params
+      });
+    };
 
-        if (call.route.is === "middle") if (call.route.path) req.path = path.posix.resolve("/", req.path.split("/").slice(call.route.path.split("/").length).join("/"));
-        if (route instanceof server) {
-          req["skip404"] = true;
-          await route.#callRequest(req, res);
-          req["skip404"] = false;
-          continue;
-        }
-
-        emit404 = false;
-        const next = new Promise<boolean>(async (done) => {
-          const next = async (err?: any) => {
-            if (this["closeEvent"]) {
-              writable = false;
-              return done(false);
-            } else if (!err) return done(true);
-
-            const middleCall = this.route_registred.filter((r) => r.is === "middle" && !!r.middle.find(r => typeof r === "function" && r.length >= 4));
-            if (middleCall.length > 0) {
-              const errCall = async (callocate: typeof middleCall) => {
-                for (const b of callocate) {
-                  if (res.closed) break;
-                  if (b.is !== "middle") continue;
-                  for (const c of b.middle) {
-                    if (res.closed) break;
-                    if (c instanceof server) continue;
-                    if (c.length >= 4) return Promise.resolve().then(() => c.call(this, err, req, res, next)).catch(err => this.emit("error", err));
-                  }
-                }
-              }
-              await errCall(middleCall).catch(err => this.emit("error", err)).then(() => done(false));
-            } else {
-              if (res.closed) super.emit("error", err);
-              else {
-                res.status(500).json({
-                  error: String(err?.message || err),
-                  stack: err?.stack
-                });
-              }
-            }
-
-            writable = false;
-            return done(false);
-          }
-          req.once("close", () => next.call({closeEvent: true}));
-          return Promise.resolve().then(() => !res.closed ? route.call(this, req, res, next) : next.call({closeEvent: true})).catch(next);
-        });
-        req.path = pathBackup;
-        if (await next) continue;
-        break;
-      }
-      call = routes.shift();
+    if (routes.length === 0) {
+      if (page404) return page404.call(this, req, res, () => {});
+      return;
     }
 
-    if (req["skip404"]) return;
-    if (!res.closed && emit404) res.status(404).json({
-      error: "endpoint not registred",
-      path: req.path,
-      routes: this.route_registred
-    });
+    // create handler
+    const errHandler: errorHandler = this.route_registred.reduce((acc, r) => {
+      if (acc) return acc;
+      if (r instanceof server) return acc;
+      else if (r.is === "route") return acc;
+      const find = r.middle.find(k => k instanceof server ? false : k.length >= 4);
+      if (find) return find;
+      return acc;
+    }, null) as errorHandler ?? function (err, req, res, next) {
+      return res.status(500).json({
+        error: String(err?.message || err),
+        stack: err?.stack,
+        cause: err?.cause
+      });
+    };
+
+    const backupParms: typeof req.params = Object(req.params);
+    const backupPath = String(req.path);
+    let indexRoute = 0;
+    let callIndex = 0;
+    const next = async (err?: any) => {
+      if (res.closed) return;
+      if (err) return Promise.resolve(errHandler(err, req, res, (kill?: any) => {})).catch(err => this.emit("error", err));
+      const r = routes[indexRoute];
+      if (!r) {
+        if (page404) return page404.call(this, req, res, () => {});
+        return;
+      }
+      req.params = {...backupParms, ...r.params};
+      req.path = backupPath;
+      if (r.route.is === "middle") if (r.route.path) req.path = path.posix.resolve("/", req.path.split("/").slice(r.route.path.split("/").length).join("/"));
+      const call: server | handler = (r.route.is === "middle" ? r.route.middle[callIndex++] : r.route.fn[callIndex++]) as any;
+      if (!call) {
+        indexRoute++;
+        callIndex = 0;
+        return next();
+      }
+      if (call instanceof server) {
+        req["allow404"] = false;
+        await call.#callRequest(req, res);
+        req["allow404"] = true;
+        return next();
+      } else if (call.length >= 4) return next();
+      Promise.resolve().then(() => call.call(this, req, res, next)).catch(next);
+      return;
+    }
+    return next();
   }
 
-  servers: (http.Server|https.Server|http2.Http2Server)[] = [];
+  /** Server listening's array */
   serverAddress: (string | AddressInfo)[] = [];
 
+  #servers: (http.Server|https.Server|http2.Http2Server)[] = [];
   /** Close all listens */
   async close() {
-    return Promise.all(this.servers.map(server => new Promise<void>((done, reject) => server.close(err => !!err ? reject(err) : done()))));
+    return Promise.all(this.#servers.map(server => new Promise<void>((done, reject) => server.close(err => !!err ? reject(err) : done()))));
   }
 
   /**
@@ -370,37 +393,27 @@ class server extends EventEmitter {
     let server: http.Server|https.Server|http2.Http2Server;
     if (is === "http2") server = (args.shift() ? http2.createSecureServer : http2.createServer)();
     else if (is === "https") server = https.createServer(args.shift());
-    else {
-      server = http.createServer();
-      is = "http";
-    }
-
+    else {server = http.createServer(); is = "http";}
+    // Catch Error and redirect to root listen
     server.on("error", err => this.emit("error", err));
-    // server.on("upgrade", (...args) => this.#callUpgrade(...args));
-    server.on("request", (req, res) => {
-      req["protocol"] = is;
-      this.#callRequest(req, res);
-    });
+    // Add listen
     server.on("listening", () => {
       const address = server.address();
       this.serverAddress.push(address);
-      this.emit("listen", {address, protocol: is});
+      this.emit("listen", {
+        protocol: is,
+        address,
+      });
     });
+
+    // Request handler
+    server.on("request", async (req, res) => {
+      req["protocol"] = is;
+      return this.#callRequest(req, res).catch(err => server.emit("error", err));
+    });
+
     server.listen(...args);
-    this.servers.push(server);
+    this.#servers.push(server);
     return this;
   }
 }
-
-interface createRoute {
-  Route: typeof createRoute
-}
-
-/**
- * Create similiar Express http server
- */
-function createRoute() {
-  return new server();
-}
-createRoute.Route = createRoute;
-export {createRoute};

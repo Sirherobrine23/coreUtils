@@ -9,6 +9,7 @@ const packages = [
   "ar",
   "page_index",
   "utils",
+  "http_server",
   "extends",
   "http",
   "cloud",

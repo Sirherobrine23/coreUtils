@@ -1,9 +1,24 @@
-import { createRoute } from "../src/server.js";
+import { createRoute } from "../src/index.js";
 const app = createRoute();
 
 app.get("__route", function ({res}) {
   res.json(this.route_registred);
 });
+
+app.get("/", (_req, _res, next) => next(), ({res, req}) => res.json({
+  from: "next",
+  ip: req.ip,
+  port: req.port,
+  family: req.socket.remoteFamily,
+  local: {
+    port: req.socket.localPort,
+    addr: req.socket.localAddress
+  }
+}));
+
+app.all("/body", (req, res, next) => req.method !== "GET" ? next() : res.status(400).json({error: "methods with Body only"}), ({res, req}) => res.json({
+  body: req.body
+}));
 
 const app2 = createRoute();
 app.use("/main", app2);
@@ -21,13 +36,14 @@ app3.get("/bing", (req, res) => {
   });
 });
 
-app.all("*", (req, res, next) => {
+app.all("*", (req, res) => {
   return res.json({
     method: req.method,
     path: req.path,
     protocol: req.protocol,
-    head: req.headers,
+    error: "Page not exist"
   });
 });
 
-app.listen("http", 3000, () => console.log("Listen on 3000"));
+app.on("listen", console.log);
+app.listen("http", 3000);
