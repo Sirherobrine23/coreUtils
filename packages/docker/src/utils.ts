@@ -1,7 +1,7 @@
 import { http } from "@sirherobrine23/http";
 import utils from "node:util";
 
-export type manifestOptions = {
+export interface manifestOptions {
   authBase?: string,
   authService?: string,
   registryBase: string,
@@ -11,7 +11,7 @@ export type manifestOptions = {
   tagDigest?: string
 };
 
-export type registryInfo = {
+export interface registryInfo {
   url: string,
   version: 1|2,
   protocol: "http"|"https"

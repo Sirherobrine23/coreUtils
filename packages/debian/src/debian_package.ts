@@ -10,7 +10,7 @@ import Ar from "@sirherobrine23/ar";
 /** Debian packages, get from `dpkg-architecture --list -L | grep 'musl-linux-' | sed 's|musl-linux-||g' | xargs`, version 1.21.1, Ubuntu */
 export type debianArch = "all"|"armhf"|"i386"|"ia64"|"alpha"|"amd64"|"arc"|"armeb"|"arm"|"arm64"|"avr32"|"hppa"|"m32r"|"m68k"|"mips"|"mipsel"|"mipsr6"|"mipsr6el"|"mips64"|"mips64el"|"mips64r6"|"mips64r6el"|"nios2"|"or1k"|"powerpc"|"powerpcel"|"ppc64"|"ppc64el"|"riscv64"|"s390"|"s390x"|"sh3"|"sh3eb"|"sh4"|"sh4eb"|"sparc"|"sparc64"|"tilegx";
 
-export type debianControl = {
+export interface debianControl {
   [anyKey: string]: string|number|boolean,
   Package: string,
   Architecture: debianArch,
@@ -89,45 +89,36 @@ export function parseControl(control: Buffer) {
 }
 
 export function createControl(controlObject: debianControl) {
-  let spaceInsident = Array(3).join(" ");
-  let control: Buffer;
+  let controlFile: string[] = [];
   for (const keyName in controlObject) {
     let data = controlObject[keyName];
     // Ignore undefined and null values
     if (data === undefined||data === null) continue;
-    let keyString: string;
-
+    let keyString = "";
     if (keyName === "Description") {
       if (typeof data !== "string") throw new TypeError("Description must be a string");
       else {
-        let dataSplit = data.split("\n").map(line => line.trim());
-        data = dataSplit.map((line, index) => {
+        data = data.split("\n").map((line, index) => {
+          line = line.trim();
           if (index === 0) return line;
-          if (line.length < 1 || line === ".") return  `${spaceInsident}.`;
-          return `${spaceInsident}${line}`;
+          if (line.length < 1 || line === ".") return  `  .`;
+          return `  ${line}`;
         }).join("\n");
       }
     }
 
-    if (typeof data === "number") keyString = `${keyName}: ${data}`;
-    else if (typeof data === "boolean") keyString = `${keyName}: ${data ? "yes" : "no"}`;
+    if (typeof data === "boolean") keyString = `${keyName}: ${data ? "yes" : "no"}`;
     else keyString = `${keyName}: ${String(data)}`;
-
-    // Add to Head
-    keyString = keyString?.trim();
-    if (keyString?.length <= 0) continue;
-    if (control) control = Buffer.concat([control, Buffer.from("\n", "utf8"), Buffer.from(keyString, "utf8")]);
-    else control = Buffer.from(keyString, "utf8");
-    keyString = null;
+    if (keyString.length > 0) controlFile.push(keyString)
   }
 
   // Add break line to end
-  return control;
+  return controlFile.join("\n");
 }
 
 
 /**
- *
+ * Parse package, add File size and Hashs
  * @param fileStream - Debian file stream
  * @returns control file
  */
@@ -150,8 +141,8 @@ export async function parsePackage(fileStream: Readable) {
           filter: (filePath) => path.basename(filePath) === "control",
           onentry: (entry) => {
           // control stream
-          let controlFile: Buffer;
-          return entry.on("data", chuck => controlFile = !controlFile ? chuck : Buffer.concat([controlFile, chuck])).on("error", reject).on("end", () => done(parseControl(controlFile)));
+          let controlFile: Buffer[] = [];
+          return entry.on("data", chuck => controlFile.push(chuck)).on("error", reject).on("end", () => done(parseControl(Buffer.concat(controlFile))));
         }})).on("error" as any, reject)
       });
     }),

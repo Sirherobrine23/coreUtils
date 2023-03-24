@@ -128,23 +128,39 @@ export async function parsePackages(streamRead: Readable) {
   return packageArray;
 }
 
-export type releaseType = Partial<{
-  Origin: string,
-  Label: string,
-  Suite: string,
-  Codename: string,
-  Date: Date,
-  "Valid-Until": Date,
-  Architectures: string[],
-  Components: string[],
-  Description: string,
-  "Acquire-By-Hash": boolean,
-  MD5Sum: {hash: string, size: number, file: string}[],
-  SHA512: {hash: string, size: number, file: string}[],
-  SHA256: {hash: string, size: number, file: string}[],
-  SHA1: {hash: string, size: number, file: string}[],
-  Changelogs: string,
-}>;
+export interface releaseType {
+  Origin?: string;
+  Label?: string;
+  Suite?: string;
+  Codename?: string;
+  Date?: Date;
+  "Valid-Until"?: Date;
+  Architectures?: string[];
+  Components?: string[];
+  Description?: string;
+  Changelogs?: string;
+  "Acquire-By-Hash"?: boolean;
+  MD5Sum?: {
+    hash: string;
+    fileSize: number;
+    filePath: string
+  }[];
+  SHA512?: {
+    hash: string;
+    fileSize: number;
+    filePath: string
+  }[];
+  SHA256?: {
+    hash: string;
+    fileSize: number;
+    filePath: string
+  }[];
+  SHA1?: {
+    hash: string;
+    fileSize: number;
+    filePath: string
+  }[];
+};
 
 /**
  * Parse Release file from debian repository
@@ -206,7 +222,7 @@ export function parseRelease(fileData: Buffer): releaseType {
  */
 export async function getPackages(baseURL: string|URL, Release: releaseType) {
   const packagesObj: {[component: string]: {[arch: string]: debianControl[]}} = {};
-  const {Components, Architectures} = Release;
+  const { Components, Architectures } = Release;
   for (const component of Components) {
     for (const arch of Architectures) {
       const baseRequest = new URL(String(baseURL));
