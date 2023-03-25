@@ -1,25 +1,29 @@
 {
   "name": "@sirherobrine23/docker-registry",
   "version": "3.4.3",
-  "description": "",
+  "description": "Maneger package/image registry",
+  "private": true,
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
+  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
+  "license": "GPL-2.0",
+  "homepage": "https://github.com/Sirherobrine23/coreUtils/tree/main/packages/docker#readme",
+  "keywords": [
+    "docker",
+    "registry"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
   },
-  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
   "bugs": {
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
   },
   "scripts": {
     "clean": "tsc --build --clean",
-    "build": "tsc"
+    "build": "tsc --build"
   },
-  "keywords": [],
-  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
-  "license": "GPL-2.0",
   "dependencies": {
     "@sirherobrine23/http": "3.4.3"
   }
