@@ -22,6 +22,14 @@ export type requestOptions = {
   disableHTTP2?: boolean
 };
 
+export class httpCoreError {
+  message: string;
+  httpCode?: number;
+  rawBody: string;
+  body: any;
+  headers: {[k: string]: string|string[]};
+}
+
 /**
  * Create reqest same to fetch but return stream response
  *
@@ -57,17 +65,15 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
 
   const request = got.stream(URLFixed, requestBody);
   (await new Promise<void>((done, reject) => request.on("error", (err: HTTPError) => {
-    const newError = new class httpCoreError {
-      message = err.message;
-      headers = err.response?.headers;
-      rawBody = err.response?.body as any;
-      body: any;
-      rawError = err;
-    };
+    const errorC = new httpCoreError();
+    errorC.httpCode = err.response?.statusCode;
+    errorC.message = err.message;
+    errorC.headers = err.response?.headers;
+    errorC.rawBody = err.response?.body as any;
     try {
-      newError.body = JSON.parse(String(newError.rawBody));
+      errorC.body = JSON.parse(String(errorC.rawBody));
     } catch {}
-    reject(newError);
+    reject(errorC);
   }).on("response", done)));
   request["headers"] = {};
   for (const head of ([request["response"]["headers"], request["response"]["trailers"]])) {

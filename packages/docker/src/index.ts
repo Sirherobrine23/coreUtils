@@ -1,2 +1,3 @@
-export * from "./main.js";
-export * as default from "./main.js";
+export * from "./auth.js";
+export * from "./image.js";
+export * from "./registry.js"
