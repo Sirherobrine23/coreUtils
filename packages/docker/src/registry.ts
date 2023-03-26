@@ -4,12 +4,12 @@ import http from "@sirherobrine23/http";
 import path from "node:path/posix";
 
 export class Manifest {
-  manifet: any;
+  manifest: any;
   readonly originalManifest: any;
   readonly multiArch: boolean;
 
   constructor(manifestObject: any, v2: v2) {
-    this.manifet = manifestObject;
+    this.manifest = manifestObject;
     Object.defineProperty(this, "originalManifest", {writable: false, value: manifestObject});
     Object.defineProperty(this, "multiArch", {
       writable: false,
@@ -20,7 +20,7 @@ export class Manifest {
       this.setPlatform = async function(options) {
         const target = this.originalManifest.manifests.find(({platform}) => (platform.architecture === nodeToGO("arch", options?.arch ?? process.arch)) && (platform.os === nodeToGO("platform", options?.os ?? process.platform)) && (!platform.variant || (!options.variant) || (platform.variant === options.variant)) && (!(platform["os.version"]) || !(options.version) || (options.version === platform["os.version"])));
         if (!target) throw new Error("Target not exists!");
-        return v2.getManifets(target.digest).then(data => (this.manifet = data.manifet));
+        return v2.getManifets(target.digest).then(data => (this.manifest = data.manifest));
       }
     }
   }

@@ -25,6 +25,7 @@ export type requestOptions = {
 export class httpCoreError {
   message: string;
   httpCode?: number;
+  url?: string;
   rawBody: string;
   body: any;
   headers: {[k: string]: string|string[]};
@@ -67,6 +68,7 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
   (await new Promise<void>((done, reject) => request.on("error", (err: HTTPError) => {
     const errorC = new httpCoreError();
     errorC.httpCode = err.response?.statusCode;
+    errorC.url = err.response?.url;
     errorC.message = err.message;
     errorC.headers = err.response?.headers;
     errorC.rawBody = err.response?.body as any;

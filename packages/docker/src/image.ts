@@ -34,15 +34,15 @@ export class parseImage {
       this.registry = split.shift();
       this.repo = split.pop();
       this.owner = split.join("/");
-      let sha256Index = -1, tagIndex = -1;
-      if ((sha256Index = this.repo.indexOf("@")) !== -1) {
-        this.sha256 = this.repo.slice(sha256Index+1);
-        this.repo = this.repo.slice(0, sha256Index);
-      }
-      if ((tagIndex = this.repo.indexOf(":")) !== -1) {
-        this.tag = this.repo.slice(tagIndex+1);
-        this.repo = this.repo.slice(0, tagIndex);
-      }
+    }
+    let sha256Index = -1, tagIndex = -1;
+    if ((sha256Index = this.repo.indexOf("@")) !== -1) {
+      this.sha256 = this.repo.slice(sha256Index+1);
+      this.repo = this.repo.slice(0, sha256Index);
+    }
+    if ((tagIndex = this.repo.indexOf(":")) !== -1) {
+      this.tag = this.repo.slice(tagIndex+1);
+      this.repo = this.repo.slice(0, tagIndex);
     }
     Object.defineProperty(this, "owner", {writable: false, value: this.owner});
     Object.defineProperty(this, "repo", {writable: false, value: this.repo});

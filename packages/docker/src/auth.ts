@@ -30,7 +30,7 @@ export class Auth {
     if (this.#closeAuth) return this;
     this.#closeAuth = true;
     const reqURL = new URL(`http://${this.#image.registry}`);
-    reqURL.pathname = path.join("/v2", this.#image.owner, this.#image.repo, "manifests/latest");
+    reqURL.pathname = path.join("/v2", this.#image.owner, this.#image.repo, "tags/list");
     await http.jsonRequest(reqURL).then(d => console.log(d.headers)).catch(async (err: http.httpCoreError) => {
       if (err.httpCode === 401) {
         let auth: string = (err.headers["www-authenticate"] as any) ?? "";
