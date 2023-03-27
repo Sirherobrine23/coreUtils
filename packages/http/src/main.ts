@@ -127,7 +127,7 @@ export default jsonRequest;
  * fetch json response
  * @returns
  */
-export async function jsonRequest<T = any>(...args: Parameters<typeof streamRequest>) {
+export async function jsonRequest<T = any>(...args: Parameters<typeof bufferRequest>) {
   const request = await bufferRequest(...args);
   return {
     headers: request.headers,
@@ -135,6 +135,10 @@ export async function jsonRequest<T = any>(...args: Parameters<typeof streamRequ
     url: request.url,
     body: JSON.parse(request.body.toString()) as T,
   };
+}
+
+export async function jsonRequestBody<T = any>(...args: Parameters<typeof bufferRequest>) {
+  return (await jsonRequest<T>(...args)).body;
 }
 
 export type clientIP<protocolType extends "ipv4"|"ipv6" = "ipv4"> = {

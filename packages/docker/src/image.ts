@@ -9,7 +9,7 @@ export class parseImage {
   registry: string = "registry-1.docker.io";
 
   /** Repository owner */
-  readonly owner: string = "library";
+  readonly owner: string;
 
   /** Repository name */
   readonly repo: string;
@@ -25,12 +25,14 @@ export class parseImage {
     image = image.trim().toLowerCase()
     const split = image.split("/");
     if (!(split.at(0))) throw new TypeError("Invalid image");
-    if (split.length === 1) this.repo = split.at(0);
-    else if (split.length === 2) {
+    if (split.length === 1) {
+      this.owner = "library";
+      this.repo = split.at(0);
+    } else if (split.length === 2) {
       this.owner = split.at(0);
       this.repo = split.at(1);
     } else {
-      this.service = undefined;
+      this.service = this.realm = undefined;
       this.registry = split.shift();
       this.repo = split.pop();
       this.owner = split.join("/");

@@ -1,5 +1,5 @@
 import { createReadStream, ReadStream as fsReadStream } from "node:fs";
-import { jsonRequest } from "./main.js";
+import { jsonRequest, jsonRequestBody } from "./main.js";
 import { Octokit } from "octokit";
 import { homedir } from "node:os";
 import { format } from "node:util";
@@ -14,7 +14,6 @@ export type githubRelease = Awaited<ReturnType<Octokit["rest"]["repos"]["listRel
 export type branchInfo = Awaited<ReturnType<Octokit["rest"]["repos"]["listBranches"]>>["data"][number];
 export type braches = Awaited<ReturnType<Octokit["rest"]["repos"]["listBranchesForHeadCommit"]>>["data"][number];
 export type tagObject = Awaited<ReturnType<Octokit["rest"]["repos"]["listTags"]>>["data"][number];
-
 export type githubTree = {
   sha: string,
   url: string,
@@ -68,10 +67,10 @@ export const github_secret = await cliToken();
 
 export async function rateLimit(token?: string) {
   token = token||github_secret;
-  const rate = await jsonRequest<rateLimitObject>({
+  const rate = await jsonRequestBody<rateLimitObject>({
     url: "https://api.github.com/rate_limit",
     headers: token?{Authorization: `token ${token}`}:{}
-  }).then(data => data.body);
+  });
   if (rate.rate.remaining === 0) throw new Error(format("Github API max requests, reset at %s", new Date(rate.rate.reset*1000).toLocaleString()));
   return rate;
 }
@@ -109,10 +108,9 @@ export default GithubManeger;
  * @param token - Github token (optional)
  * @returns
  */
-export async function GithubManeger(owner: string, repository: string, token: string = github_secret) {
-  const baseRepos = new URL("https://api.github.com/repos/");
-  baseRepos.pathname = path.posix.join(baseRepos.pathname, owner, repository);
-  await jsonRequest(baseRepos).catch(err => {
+export async function GithubManeger(owner: string, repository: string, token: string = github_secret, apiUrl = "api.github.com") {
+  const baseRepos = new URL(apiUrl ? `http://${apiUrl}` : "http://api.github.com");
+  await jsonRequest(new URL(path.posix.join("/repos", owner, repository), baseRepos)).catch(err => {
     if (err.response) {
       const rateReset = Number(err.response?.headers["x-ratelimit-reset"]);
       if (err.response?.statusCode === 404) throw new Error(`Repository ${owner}/${repository} not found`);
@@ -134,7 +132,7 @@ export async function GithubManeger(owner: string, repository: string, token: st
    */
   async function branchList() {
     const url = new URL(String(baseRepos));
-    url.pathname = path.posix.join(url.pathname, "branches");
+    url.pathname = path.posix.join("/repos", owner, repository, "branches");
     const branchList: braches[] = [];
     let etag: string;
     let next = 1;
@@ -169,20 +167,20 @@ export async function GithubManeger(owner: string, repository: string, token: st
    */
   async function getBranchInfo(branch: string) {
     const url = new URL(String(baseRepos));
-    url.pathname = path.posix.join(url.pathname, "branches", branch);
-    return jsonRequest<branchInfo>(url, {headers: token?{Authorization: `token ${token}`}:{}});
+    url.pathname = path.posix.join("/repos", owner, repository, "branches", branch);
+    return jsonRequestBody<branchInfo>(url, {headers: token?{Authorization: `token ${token}`}:{}});
   }
 
   async function trees(tree: string) {
     const requestURL = new URL(String(baseRepos));
-    requestURL.pathname = path.posix.join(requestURL.pathname, "git", "trees", tree);
+    requestURL.pathname = path.posix.join("/repos", owner, repository, "git", "trees", tree);
     requestURL.searchParams.set("recursive", "true");
-    return jsonRequest<githubTree>(requestURL, {headers: token?{Authorization: `token ${token}`}:{}}).catch(() => null);
+    return jsonRequestBody<githubTree>(requestURL, {headers: token?{Authorization: `token ${token}`}:{}});
   }
 
   async function tags() {
     const requestURL = new URL(String(baseRepos));
-    requestURL.pathname = path.posix.join(requestURL.pathname, "tags");
+    requestURL.pathname = path.posix.join("/repos", owner, repository, "tags");
     const tags: tagObject[] = [];
     let etag: string;
     let next = 1;
@@ -221,11 +219,11 @@ export async function GithubManeger(owner: string, repository: string, token: st
   async function getRelease(releaseTag: string|boolean): Promise<githubRelease>;
   async function getRelease(releaseTag?: string|boolean): Promise<githubRelease|githubRelease[]> {
     const requestURL = new URL(String(baseRepos));
-    requestURL.pathname = path.posix.join(requestURL.pathname, "releases");
+    requestURL.pathname = path.posix.join("/repos", owner, repository, "releases");
     if (typeof releaseTag === "string"||typeof releaseTag === "boolean") {
       if (typeof releaseTag === "boolean") requestURL.pathname = path.posix.join(requestURL.pathname, "latest");
       else requestURL.pathname = path.posix.join(requestURL.pathname, "tags", releaseTag);
-      return jsonRequest<githubRelease>(requestURL, {headers: token?{Authorization: `token ${token}`}:{}}).then(res => res.body).catch(() => null);
+      return jsonRequest<githubRelease>(requestURL, {headers: token?{Authorization: `token ${token}`}:{}}).then(res => res.body);
     }
     requestURL.searchParams.set("per_page", "99");
     const releaseList: githubRelease[] = [];
@@ -275,7 +273,7 @@ export async function GithubManeger(owner: string, repository: string, token: st
   }
 
   async function releaseManeger(options: {tagName: string, name?: string, body?: string, isPrerelease?: boolean}) {
-    let Release: githubRelease = await getRelease(options.tagName).catch(() => null);
+    let Release: githubRelease = await getRelease(options.tagName);
     if (!Release) Release = await octokit.rest.repos.createRelease({
       owner,
       repo: repository,

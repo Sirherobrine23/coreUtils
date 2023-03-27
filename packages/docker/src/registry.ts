@@ -30,6 +30,12 @@ export class Manifest {
     }
   }
 
+  getLayers(): {digest: string, mediaType?: string}[] {
+    if (this.manifest.layers instanceof Array) return this.manifest.layers.map(({digest, mediaType}) => ({digest, mediaType}));
+    else if (this.manifest.fsLayers instanceof Array) return this.manifest.fsLayers.map(({blobSum}) => ({digest: blobSum}));
+    throw new Error("Cannot get layer get manualy!");
+  }
+
   public platforms?: {
     architecture: string,
     variant?: string,

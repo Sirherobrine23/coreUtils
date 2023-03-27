@@ -1,7 +1,6 @@
 import { v2 } from "../src/index.js";
 process.on("unhandledRejection", err => console.error("Error:", err));
-const img = new v2("ghcr.io/homebrew/core/node");
-
+const img = new v2("ubuntu");
 const tags = await img.getTags();
 const manifestManeger = await img.getManifets(tags.at(-1));
 if (manifestManeger.multiArch) {
@@ -11,5 +10,11 @@ if (manifestManeger.multiArch) {
   });
 }
 
-console.log(manifestManeger.originalManifest);
-console.log(manifestManeger.manifest);
+console.dir({
+  origin: manifestManeger.originalManifest,
+  target: manifestManeger.manifest,
+  layers: manifestManeger.getLayers(),
+}, {
+  color: true,
+  depth: null,
+});
