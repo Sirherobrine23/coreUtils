@@ -31,12 +31,16 @@ export class httpCoreError {
   headers: {[k: string]: string|string[]};
 }
 
+export interface reqStream extends Request {
+  headers: Headers
+};
+
 /**
  * Create reqest same to fetch but return stream response
  *
  * @returns stream.Readable with headers
  */
-export async function streamRequest(re: validURL|requestOptions, options?: Omit<requestOptions, "url">): Promise<Request & {headers: Headers}> {
+export async function streamRequest(re: validURL|requestOptions, options?: Omit<requestOptions, "url">): Promise<reqStream> {
   if (!(typeof re === "string"||re instanceof URL||re?.url)) throw new TypeError("Invalid request URL");
   if (typeof re === "string"||re instanceof URL) re = { ...options, url: re };
   else re = { ...options, ...re };
@@ -64,7 +68,7 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
     else requestBody.json = re.body;
   }
 
-  const request = got.stream(URLFixed, requestBody);
+  const request: reqStream = got.stream(URLFixed, requestBody) as any;
   (await new Promise<void>((done, reject) => request.on("error", (err: HTTPError) => {
     const errorC = new httpCoreError();
     errorC.httpCode = err.response?.statusCode;
