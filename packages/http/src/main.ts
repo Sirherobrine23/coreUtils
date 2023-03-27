@@ -22,12 +22,25 @@ export type requestOptions = {
   disableHTTP2?: boolean
 };
 
+export class httpCoreError {
+  message: string;
+  httpCode?: number;
+  url?: string;
+  rawBody: string;
+  body: any;
+  headers: {[k: string]: string|string[]};
+}
+
+export interface reqStream extends Request {
+  headers: Headers
+};
+
 /**
  * Create reqest same to fetch but return stream response
  *
  * @returns stream.Readable with headers
  */
-export async function streamRequest(re: validURL|requestOptions, options?: Omit<requestOptions, "url">): Promise<Request & {headers: Headers}> {
+export async function streamRequest(re: validURL|requestOptions, options?: Omit<requestOptions, "url">): Promise<reqStream> {
   if (!(typeof re === "string"||re instanceof URL||re?.url)) throw new TypeError("Invalid request URL");
   if (typeof re === "string"||re instanceof URL) re = { ...options, url: re };
   else re = { ...options, ...re };
@@ -55,19 +68,18 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
     else requestBody.json = re.body;
   }
 
-  const request = got.stream(URLFixed, requestBody);
+  const request: reqStream = got.stream(URLFixed, requestBody) as any;
   (await new Promise<void>((done, reject) => request.on("error", (err: HTTPError) => {
-    const newError = new class httpCoreError {
-      message = err.message;
-      headers = err.response?.headers;
-      rawBody = err.response?.body as any;
-      body: any;
-      rawError = err;
-    };
+    const errorC = new httpCoreError();
+    errorC.httpCode = err.response?.statusCode;
+    errorC.url = err.response?.url;
+    errorC.message = err.message;
+    errorC.headers = err.response?.headers;
+    errorC.rawBody = err.response?.body as any;
     try {
-      newError.body = JSON.parse(String(newError.rawBody));
+      errorC.body = JSON.parse(String(errorC.rawBody));
     } catch {}
-    reject(newError);
+    reject(errorC);
   }).on("response", done)));
   request["headers"] = {};
   for (const head of ([request["response"]["headers"], request["response"]["trailers"]])) {

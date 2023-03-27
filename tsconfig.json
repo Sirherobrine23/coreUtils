@@ -20,6 +20,7 @@
   },
   "exclude": [
     "**/*.test.ts",
+    "**/test/**",
     "node_modules/"
   ],
   "ts-node": {
