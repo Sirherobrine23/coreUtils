@@ -2,7 +2,6 @@
   "name": "@sirherobrine23/docker-registry",
   "version": "3.4.3",
   "description": "Maneger package/image registry",
-  "private": true,
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
