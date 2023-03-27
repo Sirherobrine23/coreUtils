@@ -1,50 +1,12 @@
-import { parseImage, nodeToGO } from "./image.js";
+import { parseImage } from "./image.js";
 import { Auth, userAuth } from "./auth.js";
+import { extractLayer } from "./utils.js";
 import http, { reqStream } from "@sirherobrine23/http";
 import path from "node:path/posix";
 
 type RecursivePartial<T> = {[P in keyof T]?: T[P] extends (infer U)[] ? RecursivePartial<U>[] : T[P] extends object ? RecursivePartial<T[P]> : T[P];};
 function merge<T>(source: T, merge: RecursivePartial<T>): T {
   return {...source, ...merge};
-}
-
-export class Manifest {
-  manifest: any;
-  readonly originalManifest: any;
-  readonly multiArch: boolean;
-
-  constructor(manifestObject: any, v2: v2) {
-    this.manifest = manifestObject;
-    Object.defineProperty(this, "originalManifest", {writable: false, value: manifestObject});
-    Object.defineProperty(this, "multiArch", {
-      writable: false,
-      value: !!(manifestObject.manifests)
-    });
-    if (this.multiArch) {
-      this.platforms = this.originalManifest.manifests.map(({platform}) => platform);
-      this.setPlatform = async function(options) {
-        const target = this.originalManifest.manifests.find(({platform}) => (platform.architecture === nodeToGO("arch", options?.arch ?? process.arch)) && (platform.os === nodeToGO("platform", options?.os ?? process.platform)) && (!platform.variant || (!options.variant) || (platform.variant === options.variant)) && (!(platform["os.version"]) || !(options.version) || (options.version === platform["os.version"])));
-        if (!target) throw new Error("Target not exists!");
-        return v2.getManifets(target.digest).then(data => (this.manifest = data.originalManifest));
-      }
-    }
-  }
-
-  getLayers(): {digest: string, mediaType?: string}[] {
-    if (this.manifest.layers instanceof Array) return this.manifest.layers.map(({digest, mediaType}) => ({digest, mediaType}));
-    else if (this.manifest.fsLayers instanceof Array) return this.manifest.fsLayers.map(({blobSum}) => ({digest: blobSum}));
-    throw new Error("Cannot get layer get manualy!");
-  }
-
-  public platforms?: {
-    architecture: string,
-    variant?: string,
-    os: string,
-  }[];
-
-  async setPlatform(options?: {os?: NodeJS.Platform, arch?: NodeJS.Architecture, version?: string, variant?: string}): Promise<any> {
-    throw new Error("This manifests is not multi platform!");
-  }
 }
 
 export class v2 {
@@ -66,7 +28,7 @@ export class v2 {
     })).body.tags;
   }
 
-  async getManifets(ref?: string, token = new Auth(this.image, "pull", this.authUser)) {
+  async getManifets<T = any>(ref?: string, token = new Auth(this.image, "pull", this.authUser)) {
     await token.setup();
     if (!ref) ref = (await this.getTags(token)).at(-1);
     const reqURL = new URL(`http://${this.image.registry}`);
@@ -78,7 +40,7 @@ export class v2 {
       }
     };
     if (await http.bufferRequest(reqURL, merge(reqOptions, {method: "HEAD"})).then(() => false).catch(() => true)) throw new TypeError("This digest/ref not exists in registry");
-    return new Manifest((await http.jsonRequest(reqURL, reqOptions)).body, this);
+    return http.jsonRequestBody<T>(reqURL, reqOptions);
   }
 
   async deleteManifets(ref?: string, token = new Auth(this.image, "push", this.authUser)) {
@@ -94,7 +56,7 @@ export class v2 {
       }
     };
     if (await http.bufferRequest(reqURL, merge(reqOptions, {method: "HEAD"})).then(() => false).catch(() => true)) throw new TypeError("This digest/ref not exists in registry");
-    return new Manifest((await http.jsonRequest(reqURL, reqOptions)).body, this);
+    await http.bufferRequest(reqURL, reqOptions);
   }
 
   /**
@@ -115,6 +77,12 @@ export class v2 {
     };
     if (await http.bufferRequest(reqURL, merge(reqOptions, {method: "HEAD"})).then(() => false).catch(() => true)) throw new TypeError("This digest/ref not exists in registry");
     return http.streamRequest(reqURL, reqOptions);
+  }
+
+  async extractLayer(ref: string, mediaType?: string, token = new Auth(this.image, "pull", this.authUser)) {
+    await token.setup();
+    const blob = await this.getBlob(ref, token);
+    return new extractLayer(blob, mediaType);
   }
 
   /**
@@ -144,7 +112,7 @@ export class v2 {
    * @param token
    * @returns
    */
-  async getBlobManifest(ref: string, token = new Auth(this.image, "pull", this.authUser)) {
+  async getBlobManifest<T = any>(ref: string, token = new Auth(this.image, "pull", this.authUser)) {
     await token.setup();
     const reqURL = new URL(`http://${this.image.registry}`);
     reqURL.pathname = path.join("/v2", this.image.owner ?? "", this.image.repo, "blobs", ref);
@@ -155,7 +123,7 @@ export class v2 {
       }
     };
     if (await http.bufferRequest(reqURL, merge(reqOptions, {method: "HEAD"})).then(() => false).catch(() => true)) throw new TypeError("This digest/ref not exists in registry");
-    return http.jsonRequest(reqURL, reqOptions).then(({body}) => body);
+    return http.jsonRequest<T>(reqURL, reqOptions).then(({body}) => body);
   }
 
   manifestsAccepts = new Set<string>([

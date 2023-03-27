@@ -18,17 +18,17 @@ export type githubTree = {
   sha: string,
   url: string,
   truncated: boolean,
-  tree: {
+  tree: ({
     path: string,
     mode: string,
     sha: string,
     url: string
-  }&({
+  } & ({
+    type: "tree",
+  } | {
     type: "blob",
     size: number,
-  }|{
-    type: "tree",
-  })[],
+  }))[],
 };
 
 async function cliToken(): Promise<string|undefined> {
