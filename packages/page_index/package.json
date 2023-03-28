@@ -32,6 +32,6 @@
   },
   "devDependencies": {
     "@types/jsdom": "^21.1.0",
-    "@types/yargs": "^17.0.22"
+    "@types/yargs": "^17.0.24"
   }
 }
