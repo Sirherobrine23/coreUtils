@@ -1,5 +1,6 @@
 import stream from "node:stream";
 import path from "node:path";
+import { format } from "node:util";
 
 export type arHeader = {
   name: string,
@@ -57,10 +58,7 @@ export default parse;
  *
  */
 export function parse(): arParse {
-  let initialHead = true;
-  let oldBuffer: Buffer;
-  let fileStream: stream.Readable;
-  let fileStreamSize: number;
+  let initialHead = true, oldBuffer: Buffer, fileStream: stream.Readable, fileStreamSize: number;
   return new stream.Writable({
     defaultEncoding: "binary",
     objectMode: false,
@@ -81,9 +79,7 @@ export function parse(): arParse {
     },
     write(remoteChunk, encoding, callback) {
       let chunk = Buffer.isBuffer(remoteChunk) ? remoteChunk : Buffer.from(remoteChunk, encoding);
-      if (oldBuffer) {
-        chunk = Buffer.concat([oldBuffer, chunk]);
-      }
+      if (oldBuffer) chunk = Buffer.concat([oldBuffer, chunk]);
       oldBuffer = undefined;
       // file signature
       if (initialHead) {
@@ -93,9 +89,7 @@ export function parse(): arParse {
           return callback();
         }
         const signature = chunk.subarray(0, 8).toString("ascii");
-        if (signature !== "!<arch>\n") {
-          return callback(new Error("Invalid ar file"));
-        }
+        if (signature !== "!<arch>\n") return callback(new Error(format("Invalid ar file, recived: %O", signature)));
         initialHead = false;
         chunk = chunk.subarray(8);
       }

@@ -12,27 +12,3 @@ updates:
     interval: monthly
   assignees:
     - Sirherobrine23
-
-# http package
-- package-ecosystem: npm
-  directory: /packages/http
-  schedule:
-    interval: monthly
-  assignees:
-    - Sirherobrine23
-
-# debian package
-- package-ecosystem: npm
-  directory: /packages/debian
-  schedule:
-    interval: monthly
-  assignees:
-    - Sirherobrine23
-
-# cloud package
-- package-ecosystem: npm
-  directory: /packages/cloud
-  schedule:
-    interval: monthly
-  assignees:
-    - Sirherobrine23

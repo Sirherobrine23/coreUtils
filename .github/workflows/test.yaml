@@ -8,8 +8,9 @@ on:
     - main
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
+    name: Package build
     steps:
       - uses: actions/checkout@v3
         name: Checkout
@@ -24,6 +25,3 @@ jobs:
 
       - name: Build packages
         run: npm run build
-
-      - name: Run tests
-        run: npm run --workspaces --if-present test

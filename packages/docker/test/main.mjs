@@ -1,6 +1,6 @@
 import { v2, Utils } from "../src/index.js";
 process.on("unhandledRejection", err => console.error("Error:", err));
-const registry = new v2("ubuntu");
+const registry = new v2("ghcr.io/sirherobrine23/nodeaptexample:latest");
 const tags = await registry.getTags();
 const manifest = await registry.getManifets(tags.at(-1))
 const manifestManeger = new Utils.Manifest(manifest, registry);
@@ -15,5 +15,9 @@ console.dir({
 });
 
 const layer = manifestManeger.getLayers().at(0);
-const layerParse = await registry.extractLayer(layer.digest, layer.mediaType);
-layerParse.on("File", file => file.on("data", data => console.log("%s Data %O", file.path, data)));
+const layerParse = await registry.extractLayer(layer.digest);
+const files = [];
+layerParse.on("File", file => files.push(file)).on("close", () => console.dir(files, {
+  color: true,
+  depth: null,
+}));

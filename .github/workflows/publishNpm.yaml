@@ -43,7 +43,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: ${{ github.event.release.tag_name }}
-          path: sirherobrine23-*.tgz
+          path: "*.tgz"
 
       - name: Upload to release
         continue-on-error: true
@@ -61,7 +61,9 @@ jobs:
         uses: peter-evans/create-pull-request@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: Update version
-          title: Update version
-          body: Update version
-          branch: update-version
+          branch: sync_${{ github.event.release.tag_name }}
+          commit-message: Update package.json to ${{ github.event.release.tag_name }}
+          title: Update package.json to ${{ github.event.release.tag_name }}
+          body: Update package.json to ${{ github.event.release.tag_name }}
+          committer: GitHub <noreply@github.com>
+          author: github-actions[bot] github-actions[bot]@users.noreply.github.com

@@ -24,10 +24,11 @@
     "postpack": "tsc --build --clean"
   },
   "dependencies": {
+    "@sirherobrine23/decompress": "3.5.3",
     "@sirherobrine23/http": "3.5.3",
-    "tar": "^6.1.13"
+    "tar-stream": "^3.0.0"
   },
   "devDependencies": {
-    "@types/tar": "^6.1.4"
+    "@types/tar-stream": "^2.2.2"
   }
 }

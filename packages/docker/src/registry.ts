@@ -79,10 +79,10 @@ export class v2 {
     return http.streamRequest(reqURL, reqOptions);
   }
 
-  async extractLayer(ref: string, mediaType?: string, token = new Auth(this.image, "pull", this.authUser)) {
+  async extractLayer(ref: string, token = new Auth(this.image, "pull", this.authUser)) {
     await token.setup();
     const blob = await this.getBlob(ref, token);
-    return new extractLayer(blob, mediaType);
+    return new extractLayer(blob);
   }
 
   /**

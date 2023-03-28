@@ -1,7 +1,7 @@
 import EventEmitter from "events";
 import stream from "stream";
-import zlib from "zlib";
-import tar from "tar";
+import tar from "tar-stream";
+import { decompress } from "@sirherobrine23/decompress";
 import { v2 } from "./registry.js";
 import { nodeToGO } from "./image.js";
 
@@ -25,33 +25,47 @@ export interface Dev {
   gid?: number;
 }
 
+export interface File {
+  path: string;
+  size?: number;
+  stream: stream.Readable;
+}
+
 export class extractLayer extends EventEmitter {
-  constructor(layerStream: stream.Readable, mediaType?: string) {
+  constructor(layerStream: stream.Readable) {
     super({captureRejections: true});
-    if (mediaType && mediaType.includes("tar")) {
-      if (mediaType.includes("gzip")) layerStream = layerStream.pipe(zlib.createGunzip());
-      else if (mediaType.includes("zstd")) throw new Error("Cannot extract layer, not support to zstd");
-    }
-    layerStream.pipe(tar.list()).on("error" as any, err => this.emit("error", err)).on("end", () => this.emit("end")).on("close", () => this.emit("close")).on("entry", entry => {
-      if (entry.type === "CharacterDevice") this.emit("CharacterDevice", {devicePath: entry.path as string, mode: entry.mode, uid: entry.uid, gid: entry.gid});
-      else if (entry.type === "File") this.emit("File", entry);
-      else if (entry.type === "SymbolicLink"||entry.type === "Link") this.emit("Link", {isSymbolicLink: entry.type === "SymbolicLink", path: entry.path, target: entry["linkpath"] as string});
-      else if (entry.type === "Directory") {
-        const dirObj: Dir = {
-          path: entry.path,
-          mtime: entry.mtime ? new Date(entry.mtime) : undefined,
+    layerStream.pipe(decompress()).pipe(tar.extract()).on("error" as any, err => this.emit("error", err)).on("end", () => this.emit("end")).on("close", () => this.emit("close")).on("entry", (entry, str, next) => {
+      next();
+      if (entry.type === "file") {
+        const f: File = {
+          path: entry.name,
+          size: entry.size,
+          stream: stream.Readable.from(str)
+        };
+        this.emit("File", f);
+      } else if (entry.type === "directory") {
+        const d: Dir = {
+          path: entry.name,
+          mtime: entry.mtime,
           gid: entry.gid,
-          uid: entry.uid
-        }
-        this.emit("Dir", dirObj);
-      }
+          uid: entry.uid,
+        };
+        this.emit("Dir", d);
+      } else if (entry.type === "link" || entry.type === "symlink") {
+        const s: Link = {
+          isSymbolicLink: entry.type === "symlink",
+          path: entry.name,
+          target: entry.linkname
+        };
+        this.emit("Link", s);
+      } else if (entry.type === "character-device") {}
     });
   }
 
   emit(event: "end"): boolean;
   emit(event: "close"): boolean;
   emit(event: "error", err: any): boolean;
-  emit(event: "File", src: tar.ReadEntry): boolean;
+  emit(event: "File", src: File): boolean;
   emit(event: "Dir", data: Dir): boolean;
   emit(event: "Link", data: Link): boolean;
   emit(event: "CharacterDevice", data: Dev): boolean;
@@ -62,7 +76,7 @@ export class extractLayer extends EventEmitter {
   on(event: "error", fn: (err: any) => void): this;
   on(event: "end", fn: () => void): this;
   on(event: "close", fn: () => void): this;
-  on(event: "File", fn: (src: tar.ReadEntry) => void): this;
+  on(event: "File", fn: (src: File) => void): this;
   on(event: "Dir", fn: (data: Dir) => void): this;
   on(event: "Link", fn: (data: Link) => void): this;
   on(event: "CharacterDevice", fn: (data: Dev) => void): this;
