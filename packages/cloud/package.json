@@ -25,7 +25,7 @@
     "@sirherobrine23/http": "3.5.3",
     "chokidar": "^3.5.3",
     "googleapis": "^110.0.0",
-    "oci-common": "^2.50.4",
+    "oci-common": "^2.55.0",
     "oci-objectstorage": "^2.53.1"
   }
 }
