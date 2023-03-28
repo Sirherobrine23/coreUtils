@@ -20,8 +20,8 @@
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
   },
   "scripts": {
-    "clean": "tsc --build --clean",
-    "build": "tsc --build"
+    "prepack": "tsc --build --clean && tsc --build",
+    "postpack": "tsc --build --clean"
   },
   "dependencies": {
     "@sirherobrine23/http": "3.5.2",

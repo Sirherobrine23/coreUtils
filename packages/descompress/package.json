@@ -1,0 +1,35 @@
+{
+  "name": "@sirherobrine23/decompress",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "scripts": {
+    "prepack": "tsc --build --clean && tsc --build",
+    "postpack": "tsc --build --clean"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
+  },
+  "keywords": [
+    "auto",
+    "decompress"
+  ],
+  "author": "Matheus Sampaio Queirora <srherobrine20@gmail.com>",
+  "license": "GPL-2.0-only",
+  "bugs": {
+    "url": "https://github.com/Sirherobrine23/coreUtils/issues"
+  },
+  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
+  "dependencies": {
+    "duplexify": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/duplexify": "^3.6.1"
+  },
+  "optionalDependencies": {
+    "lzma-native": "^8.0.6"
+  }
+}

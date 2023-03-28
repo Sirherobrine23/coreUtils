@@ -12,11 +12,20 @@
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
   },
   "workspaces": [
-    "packages/*"
+    "packages/ar",
+    "packages/page_index",
+    "packages/utils",
+    "packages/descompress",
+    "packages/extends",
+    "packages/http",
+    "packages/cloud",
+    "packages/debian",
+    "packages/docker",
+    "packages/core"
   ],
   "scripts": {
-    "build": "node scripts/transpiler.mjs",
-    "clean": "npm run --workspaces clean --if-present",
+    "build": "npm run prepack --workspaces",
+    "clean": "npm run --workspaces postpack --if-present",
     "update_version": "node scripts/updateVersion.mjs"
   },
   "devDependencies": {

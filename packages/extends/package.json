@@ -14,8 +14,8 @@
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
   },
   "scripts": {
-    "clean": "tsc --build --clean",
-    "build": "npm run clean && tsc"
+    "prepack": "tsc --build --clean && tsc --build",
+    "postpack": "tsc --build --clean"
   },
   "keywords": [],
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",

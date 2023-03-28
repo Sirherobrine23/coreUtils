@@ -20,8 +20,8 @@
     "pageindex": "./src/cli.js"
   },
   "scripts": {
-    "clean": "tsc --build --clean",
-    "build": "tsc"
+    "prepack": "tsc --build --clean && tsc --build",
+    "postpack": "tsc --build --clean"
   },
   "keywords": [],
   "dependencies": {
