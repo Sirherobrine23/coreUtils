@@ -24,15 +24,15 @@
     "@sirherobrine23/extends": "3.5.3",
     "acme-client": "^5.0.0",
     "adm-zip": "^0.5.10",
-    "got": "^12.5.3",
-    "jsdom": "^21.1.0",
+    "got": "^12.6.0",
+    "jsdom": "^21.1.1",
     "octokit": "^2.0.14",
     "tar": "^6.1.13",
     "yaml": "^2.2.1"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.0",
-    "@types/jsdom": "^21.1.0",
+    "@types/jsdom": "^21.1.1",
     "@types/tar": "^6.1.4"
   }
 }
