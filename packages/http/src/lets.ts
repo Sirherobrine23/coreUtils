@@ -2,25 +2,16 @@ import { createServer } from "node:http";
 import * as http from "./main.js";
 import acmeClient from "acme-client";
 
-export async function createSSLCertificate(email: string, domains: string[]) {
-  const client = new acmeClient.Client({
-    accountKey: await acmeClient.crypto.createPrivateKey(),
-    directoryUrl: acmeClient.directory.letsencrypt.production,
-  });
-
-  await client.createAccount({
-    termsOfServiceAgreed: true,
-    contact: [`mailto:${email}`]
-  });
-
-  const [key, csr] = await acmeClient.crypto.createCsr({
-    commonName: domains[0],
-    altNames: domains.slice(1)
-  });
+export async function createSSLCertificate(domains: string[], email?: string, ) {
+  if (!domains || !(Array.isArray(domains)) || domains.length === 0) throw new TypeError("domains required and type is are array with one or more domains!");
+  const client = new acmeClient.Client({accountKey: await acmeClient.crypto.createPrivateKey(), directoryUrl: acmeClient.directory.letsencrypt.production});
+  await client.createAccount({termsOfServiceAgreed: true, contact: email ? [`mailto:${email}`] : undefined});
+  const commonName = domains.shift();
+  const [key, csr] = await acmeClient.crypto.createCsr({commonName, altNames: domains});
   let close: () => void;
   const cert = await client.auto({
     termsOfServiceAgreed: true,
-    email: `mailto:${email}`,
+    email: email ? `mailto:${email}` : undefined,
     challengePriority: ["dns-01"],
     csr,
     async challengeCreateFn(authz, challenge, keyAuthorization) {

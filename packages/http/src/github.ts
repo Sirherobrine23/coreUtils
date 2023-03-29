@@ -63,8 +63,8 @@ async function cliToken(): Promise<string|undefined> {
   }
   return undefined;
 }
-export const github_secret = await cliToken();
 
+export const github_secret = await cliToken();
 export async function rateLimit(token?: string) {
   token = token||github_secret;
   const rate = await jsonRequestBody<rateLimitObject>({
@@ -100,7 +100,6 @@ export type releaseOptionsUpload = {
   }
 };
 
-export default GithubManeger;
 /**
  * All functions in one function
  * @param owner - Repository owner
@@ -130,7 +129,7 @@ export async function GithubManeger(owner: string, repository: string, token: st
    * Get all branches lists
    * @returns
    */
-  async function branchList() {
+  async function branchList(): Promise<braches[]> {
     const url = new URL(String(baseRepos));
     url.pathname = path.posix.join("/repos", owner, repository, "branches");
     const branchList: braches[] = [];
@@ -173,7 +172,7 @@ export async function GithubManeger(owner: string, repository: string, token: st
 
   async function trees(tree: string) {
     const requestURL = new URL(String(baseRepos));
-    requestURL.pathname = path.posix.join("/repos", owner, repository, "git", "trees", tree);
+    requestURL.pathname = path.posix.join("/repos", owner, repository, "git/trees", tree);
     requestURL.searchParams.set("recursive", "true");
     return jsonRequestBody<githubTree>(requestURL, {headers: token?{Authorization: `token ${token}`}:{}});
   }

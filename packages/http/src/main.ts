@@ -154,10 +154,13 @@ export type clientIP<protocolType extends "ipv4"|"ipv6" = "ipv4"> = {
   protocol: "HTTP/2.0"|"HTTP/1.1"|"HTTP/1.0"
 };
 
+/**
+ * Get client remote address
+ */
 export async function getExternalIP(): Promise<{ipv4?: string, ipv6?: string, rawRequest?: {ipv4?: clientIP<"ipv4">, ipv6?: clientIP<"ipv6">}}> {
   const [ipv6, ipv4] = await Promise.all([
-    await jsonRequest<clientIP<"ipv6">>("https://ipv6.lookup.test-ipv6.com/ip/").then(data => data.body).catch(() => undefined),
-    await jsonRequest<clientIP<"ipv4">>("https://ipv4.lookup.test-ipv6.com/ip/").then(data => data.body).catch(() => undefined)
+    await jsonRequest<clientIP<"ipv6">>("https://ipv6.lookup.test-ipv6.com/ip/").then(data => data.body).catch(() => null as clientIP<"ipv6">),
+    await jsonRequest<clientIP<"ipv4">>("https://ipv4.lookup.test-ipv6.com/ip/").then(data => data.body).catch(() => null as clientIP<"ipv4">)
   ]);
   if (!ipv4 && !ipv6) return {};
   else if (!ipv4) return {ipv6: ipv6.ip, rawRequest: {ipv6}};
@@ -169,12 +172,13 @@ export async function getExternalIP(): Promise<{ipv4?: string, ipv6?: string, ra
   };
 }
 
-export async function getURLs(re: validURL|requestOptions, options?: Omit<requestOptions, "url">) {
-  const requestResponse = await bufferRequest(re, options);
+/** Get urls from HTML page */
+export async function getURLs(...args: Parameters<typeof bufferRequest>) {
+  const requestResponse = await bufferRequest(...args);
   const { serialize, window } = new JSDOM(requestResponse.body, {url: requestResponse.url.toString()});
   return {
     ...requestResponse,
-    body: Array.from(window.document.querySelectorAll("*")).map(ele => (ele["href"]||ele["src"]) as string|undefined).filter(data => !!data?.trim()).sort(),
+    body: Array.from(window.document.querySelectorAll("*")).map(doc => (doc["href"]||doc["src"]) as string|undefined).filter(data => !!data?.trim()).sort(),
     document: window.document,
     serialize,
     window,
