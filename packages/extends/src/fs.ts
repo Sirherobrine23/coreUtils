@@ -32,6 +32,10 @@ export type fileInfo = {
   realPath: string,
   relaType: "file"|"directory"|"symbolicLink"|"unknown",
   size: number,
+  mtime: Date,
+  mode?: number,
+  gid?: number,
+  uid?: number,
 };
 
 export async function readdir(options: string): Promise<string[]>;
@@ -46,6 +50,7 @@ export async function readdir(options: string|{folderPath: string|string[], filt
     if (!options.withInfo) return [resolvedPath];
     const stat = await fs.stat(resolvedPath);
     const relaStat = await fs.stat(await fs.realpath(resolvedPath));
+    stat.mode
     return [
       {
         path: resolvedPath,
@@ -53,6 +58,10 @@ export async function readdir(options: string|{folderPath: string|string[], filt
         realPath: await fs.realpath(resolvedPath),
         relaType: relaStat.isFile()?"file":relaStat.isDirectory()?"directory":relaStat.isSymbolicLink()?"symbolicLink":"unknown",
         size: stat.size,
+        mtime: stat.mtime,
+        uid: stat.uid,
+        gid: stat.gid,
+        mode: stat.mode,
       }
     ];
   }
@@ -69,6 +78,10 @@ export async function readdir(options: string|{folderPath: string|string[], filt
       realPath: await fs.realpath(folderPath),
       relaType: relaStat.isFile()?"file":relaStat.isDirectory()?"directory":relaStat.isSymbolicLink()?"symbolicLink":"unknown",
       size: stat.size,
+      mtime: stat.mtime,
+      uid: stat.uid,
+      gid: stat.gid,
+      mode: stat.mode,
     };
   })));
   return info.map(d => Array.isArray(d)?d.flat():d).flat() as any;

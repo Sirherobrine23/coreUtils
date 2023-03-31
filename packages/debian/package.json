@@ -22,13 +22,12 @@
   "license": "GPL-2.0",
   "dependencies": {
     "@sirherobrine23/ar": "3.5.3",
+    "@sirherobrine23/decompress": "3.5.4",
     "@sirherobrine23/extends": "3.5.3",
     "@sirherobrine23/http": "3.5.3",
-    "lzma-native": "^8.0.6",
-    "unbzip2-stream": "^1.4.3"
+    "tar-stream": "^3.0.0"
   },
   "devDependencies": {
-    "@types/lzma-native": "^4.0.1",
-    "@types/unbzip2-stream": "^1.4.0"
+    "@types/tar-stream": "^2.2.2"
   }
 }

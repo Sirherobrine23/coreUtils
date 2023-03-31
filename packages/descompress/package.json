@@ -24,12 +24,16 @@
   },
   "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
   "dependencies": {
-    "duplexify": "^4.1.2"
+    "duplexify": "^4.1.2",
+    "unbzip2-stream": "^1.4.3"
   },
   "devDependencies": {
-    "@types/duplexify": "^3.6.1"
+    "@types/duplexify": "^3.6.1",
+    "@types/lzma-native": "^4.0.1",
+    "@types/unbzip2-stream": "^1.4.0"
   },
   "optionalDependencies": {
+    "@xingrz/cppzst": "^2.1.0-alpha.8",
     "lzma-native": "^8.0.6"
   }
 }

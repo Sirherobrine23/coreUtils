@@ -1,6 +1,8 @@
+import { createReadStream } from "node:fs";
+import { extendsFS } from "@sirherobrine23/extends";
+import { format } from "node:util";
 import stream from "node:stream";
 import path from "node:path";
-import { format } from "node:util";
 
 export type arHeader = {
   name: string,
@@ -29,19 +31,6 @@ export declare interface arParse extends stream.Writable {
   once(event: "unpipe", listener: (src: stream.Readable) => void): this;
   once(event: "entry", listener: (header: arHeader, stream: stream.Readable) => void): this;
   once(event: string | symbol, listener: (...args: any[]) => void): this;
-}
-
-export function createHead(filename: string, info: {mode?: "100644", mtime?: Date|string, size: number}) {
-  if (!info.mtime) info.mtime = new Date();
-  const controlHead = Buffer.alloc(60, 0x20);
-  controlHead.write(path.basename(filename), 0, 16);
-  controlHead.write((typeof info.mtime === "string" ? info.mtime : (info.mtime.getTime()/1000).toFixed()), 16, 12);
-  controlHead.write("0", 28, 6);
-  controlHead.write("0", 34, 6);
-  controlHead.write(String(info?.mode ?? "100644"), 40, 6);
-  controlHead.write(String(info.size), 48, 10);
-  controlHead.write("`\n`", 58, 2);
-  return controlHead;
 }
 
 export default parse;
@@ -162,6 +151,85 @@ export function parse(): arParse {
       // Get more buffer data
       if (chunk.length > 0) oldBuffer = chunk;
       return callback();
+    }
+  });
+}
+
+export function createHead(filename: string, info: {mtime?: Date|string, size: number}) {
+  if (!info.mtime) info.mtime = new Date();
+  const controlHead = Buffer.alloc(60, 0x20);
+  controlHead.write(path.basename(filename), 0, 16);
+  controlHead.write(!info.mtime ? "0" : (typeof info.mtime === "string" ? info.mtime : (info.mtime.getTime()/1000).toFixed()), 16, 12);
+  controlHead.write("0", 28, 6);
+  controlHead.write("0", 34, 6);
+  controlHead.write("644", 40, 6);
+  controlHead.write(String(info.size), 48, 10);
+  controlHead.write("`\n", 58, 2);
+  return controlHead;
+}
+
+export class arStream extends stream.Readable {
+  constructor(onRedable?: (this: arStream) => void) {
+    super({
+      autoDestroy: true,
+      read(){},
+    });
+    this.push(Buffer.from([0x21, 0x3C, 0x61, 0x72, 0x63, 0x68, 0x3E, 0x0A]));
+    Promise.resolve().then(() => onRedable.call(this)).catch(err => this.emit("error", err));
+  }
+  #lockWrite = false;
+  close() {
+    this.#lockWrite = true;
+    this.push(null);
+  }
+  addFile(str: stream.Readable|Buffer|string, filename: string, size: number, mtime?: Date) {
+    if (this.#lockWrite) throw new TypeError("Write locked");
+    this.#lockWrite = true;
+    return new Promise<void>((done, reject) => {
+      this.push(createHead(filename, {size, mtime}), "binary");
+      if (Buffer.isBuffer(str)||typeof str === "string") {
+        size = Buffer.byteLength(str);
+        str = stream.Readable.from(str);
+      }
+      return str.pipe(new stream.Writable({
+        autoDestroy: true,
+        write: (chunk: Buffer, encoding, callback) => {
+          if (!(Buffer.isBuffer(chunk))) chunk = Buffer.from(chunk, encoding);
+          if ((size -= Buffer.byteLength(chunk)) > 0) this.push(chunk);
+          callback();
+        },
+        final: (callback) => {
+          this.#lockWrite = false;
+          done();
+          callback();
+        },
+        destroy: (error, callback) => {
+          if (!!error) {
+            this.emit("error", error);
+            reject(error);
+          }
+          return callback(error);
+        },
+      }));
+    });
+  }
+}
+
+export function createStream(...args: ConstructorParameters<typeof arStream>) {
+  return new arStream(...args);
+}
+
+
+/**
+ * Create ar file
+ */
+export function createLocal(folderPath: string) {
+  return new arStream(async function() {
+    if (!(await extendsFS.exists(folderPath))) throw new Error("Path not exists!");
+    else if (await extendsFS.isFile(folderPath)) throw new Error("path is file not folder!");
+    for (const fileInfo of await extendsFS.readdir({folderPath, withInfo: true})) {
+      if (fileInfo.type !== "file") continue;
+      await this.addFile(createReadStream(fileInfo.path), fileInfo.path, fileInfo.size, fileInfo.mtime)
     }
   });
 }

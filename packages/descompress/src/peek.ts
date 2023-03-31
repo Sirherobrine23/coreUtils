@@ -13,10 +13,10 @@ export interface options {
 
 export type onpeek = (data: Buffer, swap: (err?: any, str?: Transform) => void) => void
 
-export function peek(opts: number): duplexify.Duplexify;
-export function peek(onpeek: onpeek): duplexify.Duplexify;
-export function peek(): duplexify.Duplexify;
 export function peek(opts: options, onpeek: onpeek): duplexify.Duplexify;
+export function peek(onpeek: onpeek): duplexify.Duplexify;
+export function peek(opts: number): duplexify.Duplexify;
+export function peek(): duplexify.Duplexify;
 export function peek(opts?: options|number|onpeek, onpeek?: onpeek): duplexify.Duplexify {
   if (typeof opts === "number") opts = {maxBuffer: opts};
   if (typeof opts === "function") return peek(null, opts)

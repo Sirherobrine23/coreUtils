@@ -35,5 +35,8 @@
     "mocha": "^10.2.0",
     "semver": "^7.3.8",
     "typescript": "^4.9.5"
+  },
+  "optionalDependencies": {
+    "zstd-codec": "^0.1.4"
   }
 }

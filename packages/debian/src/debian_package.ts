@@ -1,11 +1,12 @@
-import { extendsCrypto } from "@sirherobrine23/extends";
+import { createReadStream, createWriteStream, promises as fs } from "node:fs";
+import { extendsCrypto, extendsFS } from "@sirherobrine23/extends";
 import { Readable } from "node:stream";
-import bzip2 from "unbzip2-stream";
-import lzma from "lzma-native";
+import { pipeline } from "node:stream/promises";
+import { tmpdir } from "node:os";
+import decompress, { compress, compressAvaible } from "@sirherobrine23/decompress";
+import Ar, { createStream } from "@sirherobrine23/ar";
+import tarStream from "tar-stream";
 import path from "node:path";
-import zlib from "node:zlib";
-import tar from "tar";
-import Ar from "@sirherobrine23/ar";
 
 /** Debian packages, get from `dpkg-architecture --list -L | grep 'musl-linux-' | sed 's|musl-linux-||g' | xargs`, version 1.21.1, Ubuntu */
 export type debianArch = "all"|"armhf"|"i386"|"ia64"|"alpha"|"amd64"|"arc"|"armeb"|"arm"|"arm64"|"avr32"|"hppa"|"m32r"|"m68k"|"mips"|"mipsel"|"mipsr6"|"mipsr6el"|"mips64"|"mips64el"|"mips64r6"|"mips64r6el"|"nios2"|"or1k"|"powerpc"|"powerpcel"|"ppc64"|"ppc64el"|"riscv64"|"s390"|"s390x"|"sh3"|"sh3eb"|"sh4"|"sh4eb"|"sparc"|"sparc64"|"tilegx";
@@ -116,7 +117,6 @@ export function createControl(controlObject: debianControl) {
   return controlFile.join("\n");
 }
 
-
 /**
  * Parse package, add File size and Hashs
  * @param fileStream - Debian file stream
@@ -130,20 +130,18 @@ export async function parsePackage(fileStream: Readable) {
     extendsCrypto.createHashAsync(fileStream),
     new Promise<debianControl>((done, reject) => {
       let loaded = false;
-      arParse.once("close", () => {if(!loaded) return reject(new Error("Invalid debian package"))}).on("entry", async (info, stream) => {
+      arParse.once("close", () => (!loaded)?reject(new Error("Invalid debian package")):null);
+      arParse.on("entry", async (info, stream) => {
         const fileBasename = path.basename(info.name).trim();
         if (!(fileBasename.startsWith("control.tar"))) return stream.on("error", reject);
-        if (fileBasename.endsWith(".xz")) stream = stream.pipe(lzma.Decompressor());
-        else if (fileBasename.endsWith(".gz")) stream = stream.pipe(zlib.createGunzip());
-        else if (fileBasename.endsWith(".zst")) throw new Error("Facebook zst not supported to extract data");
         loaded = true;
-        return stream.pipe(tar.list({
-          filter: (filePath) => path.basename(filePath) === "control",
-          onentry: (entry) => {
-          // control stream
-          let controlFile: Buffer[] = [];
-          return entry.on("data", chuck => controlFile.push(chuck)).on("error", reject).on("end", () => done(parseControl(Buffer.concat(controlFile))));
-        }})).on("error" as any, reject)
+        return stream.pipe(decompress()).pipe(tarStream.extract()).on("error", reject).on("entry", (head, str) => {
+          if (path.basename(head.name) === "control") {
+            let controlFile: Buffer[] = [];
+            return str.on("data", chuck => controlFile.push(chuck)).on("error", reject).on("end", () => done(parseControl(Buffer.concat(controlFile))));
+          }
+          return null;
+        });
       });
     }),
     new Promise<void>((done, reject) => {
@@ -151,24 +149,17 @@ export async function parsePackage(fileStream: Readable) {
       arParse.once("close", () => {if (!loaded) return reject(new Error("Invalid debian package"))}).on("entry", async (info, stream) => {
         const fileBasename = path.basename(info.name).trim();
         if (!(fileBasename.startsWith("data.tar"))) return stream.on("error", reject);
-        if (fileBasename.endsWith(".gz")) stream = stream.pipe(zlib.createGunzip());
-        else if (fileBasename.endsWith(".bz2")) stream = stream.pipe(bzip2());
-        else if (fileBasename.endsWith(".xz")||fileBasename.endsWith(".lzma")) stream = stream.pipe(lzma.Decompressor());
-        else if (fileBasename.endsWith(".zst")) throw new Error("Facebook zst not supported to extract data");
-        loaded = true;
-        return stream.pipe(tar.list({
-          onentry: (entry) => {
-            const fixedPath = path.posix.resolve("/", entry.path);
-            if (entry.type === "File") filesData.push({
-              type: "file",
-              path: fixedPath,
-              size: entry.size
-            }); else filesData.push({
-              type: "folder",
-              path: fixedPath
-            });
-          }
-        })).on("error" as any, reject).on("end", done);
+        return stream.pipe(decompress()).pipe(tarStream.extract()).on("entry", (entry) => {
+          const fixedPath = path.posix.resolve("/", entry.name);
+          if (entry.type === "file") filesData.push({
+            type: "file",
+            path: fixedPath,
+            size: entry.size
+          }); else filesData.push({
+            type: "folder",
+            path: fixedPath
+          });
+        }).on("error" as any, reject).on("end", done);
       });
     }),
   ]);
@@ -182,4 +173,89 @@ export async function parsePackage(fileStream: Readable) {
     control: dataPromises[1],
     files: filesData
   };
+}
+
+/**
+ * Get tar data end auto descompress
+ *
+ * @param fileStream - Package file stream
+ * @returns
+ */
+export async function getPackageData(fileStream: Readable) {
+  const arParse = fileStream.pipe(Ar());
+  const dataTar = await new Promise<Readable>((done, rej) => arParse.once("close", () => rej(new Error("There is no data.tar or it is not a debian package"))).on("entry", (str, stream) => path.basename(str.name).startsWith("data.tar") ? done(stream) : null));
+  return dataTar.pipe(decompress());
+}
+
+export interface packageConfig {
+  dataFolder: string;
+  control: debianControl;
+  compress?: {
+    control?: Exclude<compressAvaible, "zst"|"deflate">;
+    data?: Exclude<compressAvaible, "deflate">;
+  }
+}
+
+export async function createPackage(packageInfo: packageConfig) {
+  if (!(await extendsFS.exists(packageInfo?.dataFolder))) throw new TypeError("required dataFolder to create data.tar");
+  else if (await extendsFS.isFile(packageInfo.dataFolder)) throw new TypeError("dataFolder is file");
+  packageInfo.compress ??= {};
+  packageInfo.compress.control ??= "gzip";
+  packageInfo.compress.data ??= "gzip";
+  const tmpFolder = await fs.mkdtemp(path.join(tmpdir(), "debianstream_"));
+
+  const tars = {
+    controlTar: tarStream.pack(),
+    dataTar: tarStream.pack(),
+    size: {
+      control: 0,
+      data: 0
+    }
+  }
+
+  let controlPath = path.join(tmpFolder, "control.tar");
+  if (packageInfo.compress.control === "gzip") controlPath += ".gz";
+  else if (packageInfo.compress.control === "xz") controlPath += ".xz";
+
+  let dataPath = path.join(tmpFolder, "data.tar");
+  if (packageInfo.compress.data === "gzip") dataPath += ".gz";
+  else if (packageInfo.compress.data === "xz") dataPath += ".xz";
+  else if (packageInfo.compress.data === "zst") dataPath += ".zst";
+
+  // Write temp files
+  const controlPipe = pipeline(tars.controlTar.pipe(compress(packageInfo.compress.control)).on("data", data => tars.size.control += Buffer.byteLength(data)), createWriteStream(controlPath));
+  const pipeDataPromise = pipeline(tars.dataTar.pipe(compress(packageInfo.compress.data)).on("data", data => tars.size.data += Buffer.byteLength(data)), createWriteStream(dataPath));
+  const filesDate = new Date();
+
+  return createStream(async function pack() {
+    // Write debian binary
+    await this.addFile("2.0\n", "debian-binary", 4, filesDate);
+
+    // Write control file
+    const controlFile = createControl(packageInfo.control);
+    tars.controlTar.entry({name: "./control", size: Buffer.byteLength(controlFile)}, () => tars.controlTar.finalize()).end(controlFile);
+
+    // Wait to write
+    await controlPipe.then(async () => this.addFile(createReadStream(controlPath), path.basename(controlPath), tars.size.control, filesDate));
+
+    const dataFiles = await extendsFS.readdir({
+      filter: (path) => !(path.startsWith("DEBIAN") || path.startsWith("debian")),
+      folderPath: packageInfo.dataFolder,
+      withInfo: true,
+    });
+
+    for (const ff of dataFiles) {
+      const entryFolder = path.posix.resolve("/", path.posix.normalize(path.relative(packageInfo.dataFolder, ff.path)));
+      if (ff.type === "directory") tars.dataTar.entry({name: entryFolder, size: ff.size, mtime: ff.mtime, type: "directory", uid: ff.uid, gid: ff.gid, mode: ff.mode}).end();
+      else if (ff.type === "file") await pipeline(createReadStream(ff.path), tars.dataTar.entry({name: entryFolder, size: ff.size, mtime: ff.mtime, type: "file", uid: ff.uid, gid: ff.gid, mode: ff.mode}));
+      else if (ff.type === "symbolicLink") tars.dataTar.entry({name: entryFolder, linkname: ff.realPath, size: ff.size, mtime: ff.mtime, type: "symlink", uid: ff.uid, gid: ff.gid, mode: ff.mode}).end();
+    }
+
+    // End
+    tars.dataTar.finalize();
+    await pipeDataPromise.then(async () => this.addFile(createReadStream(dataPath), path.basename(dataPath), tars.size.data, filesDate));
+    console.log(tars.size);
+    await fs.rm(tmpFolder, {recursive: true, force: true}).catch(err => this.emit("error", err));
+    this.close();
+  });
 }

@@ -1,5 +1,5 @@
 import { debianPackage, apt } from "../src/index.js";
-import { http } from "../../http/src/index.js";
+import { http } from "@sirherobrine23/http";
 
 describe("Debian package", function () {
   this.timeout(Infinity);

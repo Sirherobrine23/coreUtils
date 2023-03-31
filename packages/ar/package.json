@@ -18,6 +18,9 @@
     "postpack": "tsc --build --clean"
   },
   "keywords": [],
+  "dependencies": {
+    "@sirherobrine23/extends": "*"
+  },
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0"
 }
