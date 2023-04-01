@@ -65,5 +65,3 @@ jobs:
           commit-message: Update package.json to ${{ github.event.release.tag_name }}
           title: Update package.json to ${{ github.event.release.tag_name }}
           body: Update package.json to ${{ github.event.release.tag_name }}
-          committer: GitHub <noreply@github.com>
-          author: github-actions[bot] github-actions[bot]@users.noreply.github.com

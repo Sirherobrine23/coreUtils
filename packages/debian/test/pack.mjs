@@ -4,7 +4,7 @@ import { fileURLToPath } from "url";
 import { pipeline } from "stream/promises";
 import { createWriteStream } from "fs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const deb = await dpkg.createPackage({
+const deb = dpkg.createPackage({
   dataFolder: path.join(__dirname, "debian_pack"),
   control: {
     Package: "test",

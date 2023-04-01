@@ -1,9 +1,8 @@
-import { debianControl, parseControl } from "./debian_package.js";
+import { debianControl, parseControl } from "./deb.js";
 import { Readable, Writable } from "node:stream";
 import { http } from "@sirherobrine23/http";
-import lzma from "lzma-native";
+import decompress from "@sirherobrine23/decompress";
 import path from "node:path";
-import zlib from "node:zlib";
 
 export function parseSource(data: Buffer) {
   const lines: Buffer[] = [];
@@ -228,7 +227,7 @@ export async function getPackages(baseURL: string|URL, Release: releaseType) {
       const baseRequest = new URL(String(baseURL));
       baseRequest.pathname = path.posix.resolve(baseRequest.pathname, component, `binary-${arch}`, "Packages");
       const packagesURLString = baseRequest.toString();
-      await http.streamRequest(packagesURLString).catch(() => http.streamRequest(packagesURLString+".gz").then(stream => stream.pipe(zlib.createGunzip()))).catch(() => http.streamRequest(packagesURLString+".xz").then(stream => stream.pipe(lzma.Decompressor()))).then(async stream => {
+      await http.streamRequest(packagesURLString).catch(() => http.streamRequest(packagesURLString+".gz")).catch(() => http.streamRequest(packagesURLString+".xz")).then(str => str.pipe(decompress())).then(async stream => {
         packagesObj[component] ??= {};
         packagesObj[component][arch] ??= [];
         packagesObj[component][arch] = await parsePackages(stream);

@@ -1,11 +1,11 @@
-import { createReadStream, createWriteStream, promises as fs } from "node:fs";
-import { extendsCrypto, extendsFS } from "@sirherobrine23/extends";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import { tmpdir } from "node:os";
 import decompress, { compress, compressAvaible } from "@sirherobrine23/decompress";
 import Ar, { createStream } from "@sirherobrine23/ar";
+import { createReadStream, createWriteStream, promises as fs } from "node:fs";
+import { extendsCrypto, extendsFS } from "@sirherobrine23/extends";
+import { tmpdir } from "node:os";
+import stream_promise from "node:stream/promises";
 import tarStream from "tar-stream";
+import stream from "node:stream";
 import path from "node:path";
 
 /** Debian packages, get from `dpkg-architecture --list -L | grep 'musl-linux-' | sed 's|musl-linux-||g' | xargs`, version 1.21.1, Ubuntu */
@@ -122,7 +122,7 @@ export function createControl(controlObject: debianControl) {
  * @param fileStream - Debian file stream
  * @returns control file
  */
-export async function parsePackage(fileStream: Readable) {
+export async function parsePackage(fileStream: stream.Readable) {
   const arParse = fileStream.pipe(Ar());
   const filesData: ({path: string} & ({type: "file", size: number}|{type: "folder"}))[] = [];
 
@@ -181,9 +181,9 @@ export async function parsePackage(fileStream: Readable) {
  * @param fileStream - Package file stream
  * @returns
  */
-export async function getPackageData(fileStream: Readable) {
+export async function getPackageData(fileStream: stream.Readable) {
   const arParse = fileStream.pipe(Ar());
-  const dataTar = await new Promise<Readable>((done, rej) => arParse.once("close", () => rej(new Error("There is no data.tar or it is not a debian package"))).on("entry", (str, stream) => path.basename(str.name).startsWith("data.tar") ? done(stream) : null));
+  const dataTar = await new Promise<stream.Readable>((done, rej) => arParse.once("close", () => rej(new Error("There is no data.tar or it is not a debian package"))).on("entry", (str, stream) => path.basename(str.name).startsWith("data.tar") ? done(stream) : null));
   return dataTar.pipe(decompress());
 }
 
@@ -196,66 +196,63 @@ export interface packageConfig {
   }
 }
 
-export async function createPackage(packageInfo: packageConfig) {
-  if (!(await extendsFS.exists(packageInfo?.dataFolder))) throw new TypeError("required dataFolder to create data.tar");
-  else if (await extendsFS.isFile(packageInfo.dataFolder)) throw new TypeError("dataFolder is file");
-  packageInfo.compress ??= {};
-  packageInfo.compress.control ??= "gzip";
-  packageInfo.compress.data ??= "gzip";
-  const tmpFolder = await fs.mkdtemp(path.join(tmpdir(), "debianstream_"));
-
-  const tars = {
-    controlTar: tarStream.pack(),
-    dataTar: tarStream.pack(),
-    size: {
-      control: 0,
-      data: 0
+/**
+ * Create debian package directly from Nodejs without external command
+ *
+ * This function is still under construction and some errors may appear.
+ *
+ * such as the ".deb" file being poorly compressed and returning a "malformed archive", and this can occur due to poor file compression in "gzip/gz" I recommend not doing any compression to control.tar and data.tar
+ *
+ * @param packageInfo - Package config
+ * @returns .deb file stream
+ */
+export function createPackage(packageInfo: packageConfig) {
+  return createStream(async function packDeb() {
+    if (!(await extendsFS.exists(packageInfo?.dataFolder))) throw new TypeError("required dataFolder to create data.tar");
+    else if (await extendsFS.isFile(packageInfo.dataFolder)) throw new TypeError("dataFolder is file");
+    const posixNormalize = (path: string) => path.split("\\").join("/");
+    const tmpFolder = await fs.mkdtemp(path.join(tmpdir(), "debianstream_"));
+    packageInfo.compress ??= {};
+    const targsPath = {
+      control: path.join(tmpFolder, "control.tar"+(packageInfo.compress.control === "xz" ? ".xz" : packageInfo.compress.control === "gzip" ? ".gz" : "")),
+      data: path.join(tmpFolder, "data.tar"+(packageInfo.compress.data === "xz" ? ".xz" : packageInfo.compress.data === "zst" ? ".zst" : packageInfo.compress.data === "gzip" ? ".gz" : "")),
     }
-  }
 
-  let controlPath = path.join(tmpFolder, "control.tar");
-  if (packageInfo.compress.control === "gzip") controlPath += ".gz";
-  else if (packageInfo.compress.control === "xz") controlPath += ".xz";
+    const controlPack = tarStream.pack(), dataPack = tarStream.pack();
+    const compressed = Promise.all([
+      stream_promise.pipeline(controlPack.pipe(compress(packageInfo.compress.control || "passThrough")), createWriteStream(targsPath.control)),
+      stream_promise.pipeline(dataPack.pipe(compress(packageInfo.compress.data || "passThrough")), createWriteStream(targsPath.data)),
+    ]);
 
-  let dataPath = path.join(tmpFolder, "data.tar");
-  if (packageInfo.compress.data === "gzip") dataPath += ".gz";
-  else if (packageInfo.compress.data === "xz") dataPath += ".xz";
-  else if (packageInfo.compress.data === "zst") dataPath += ".zst";
-
-  // Write temp files
-  const controlPipe = pipeline(tars.controlTar.pipe(compress(packageInfo.compress.control)).on("data", data => tars.size.control += Buffer.byteLength(data)), createWriteStream(controlPath));
-  const pipeDataPromise = pipeline(tars.dataTar.pipe(compress(packageInfo.compress.data)).on("data", data => tars.size.data += Buffer.byteLength(data)), createWriteStream(dataPath));
-  const filesDate = new Date();
-
-  return createStream(async function pack() {
-    // Write debian binary
-    await this.addFile("2.0\n", "debian-binary", 4, filesDate);
-
-    // Write control file
+    // Control file
     const controlFile = createControl(packageInfo.control);
-    tars.controlTar.entry({name: "./control", size: Buffer.byteLength(controlFile)}, () => tars.controlTar.finalize()).end(controlFile);
+    await stream_promise.pipeline(controlFile, controlPack.entry({name: "./control", size: Buffer.byteLength(controlFile)}));
 
-    // Wait to write
-    await controlPipe.then(async () => this.addFile(createReadStream(controlPath), path.basename(controlPath), tars.size.control, filesDate));
-
-    const dataFiles = await extendsFS.readdir({
-      filter: (path) => !(path.startsWith("DEBIAN") || path.startsWith("debian")),
-      folderPath: packageInfo.dataFolder,
-      withInfo: true,
-    });
-
-    for (const ff of dataFiles) {
-      const entryFolder = path.posix.resolve("/", path.posix.normalize(path.relative(packageInfo.dataFolder, ff.path)));
-      if (ff.type === "directory") tars.dataTar.entry({name: entryFolder, size: ff.size, mtime: ff.mtime, type: "directory", uid: ff.uid, gid: ff.gid, mode: ff.mode}).end();
-      else if (ff.type === "file") await pipeline(createReadStream(ff.path), tars.dataTar.entry({name: entryFolder, size: ff.size, mtime: ff.mtime, type: "file", uid: ff.uid, gid: ff.gid, mode: ff.mode}));
-      else if (ff.type === "symbolicLink") tars.dataTar.entry({name: entryFolder, linkname: ff.realPath, size: ff.size, mtime: ff.mtime, type: "symlink", uid: ff.uid, gid: ff.gid, mode: ff.mode}).end();
+    // data tarball
+    const dataFiles = await extendsFS.readdirV2(packageInfo.dataFolder, true, (fpath) => !(fpath.startsWith("DEBIAN")||fpath.startsWith("debian")));
+    for (const target of dataFiles) {
+      if (!(target.type === "file" || target.type === "dir" || target.type === "symbolicLink")) continue;
+      const entry = dataPack.entry({
+        name: posixNormalize(target.path),
+        linkname: target.realPath ? posixNormalize(target.realPath) : undefined,
+        type: target.type === "dir" ? "directory" : target.type === "symbolicLink" ? "symlink" : "file",
+        size: target.size,
+        gid: target.info.gid,
+        uid: target.info.uid,
+        mtime: target.info.mtime,
+        mode: target.info.mode
+      });
+      if (target.type === "file") await stream_promise.pipeline(createReadStream(target.fullPath), entry);
+      else await stream_promise.finished(entry.end());
     }
 
-    // End
-    tars.dataTar.finalize();
-    await pipeDataPromise.then(async () => this.addFile(createReadStream(dataPath), path.basename(dataPath), tars.size.data, filesDate));
-    console.log(tars.size);
-    await fs.rm(tmpFolder, {recursive: true, force: true}).catch(err => this.emit("error", err));
+    dataPack.finalize();
+    controlPack.finalize();
+    await compressed;
+    await this.addFile("2.0\n", "debian-binary", 4);
+    await this.addLocalFile(targsPath.control);
+    await this.addLocalFile(targsPath.data);
+    await fs.rm(tmpFolder, {recursive: true, force: true});
     this.close();
   });
 }

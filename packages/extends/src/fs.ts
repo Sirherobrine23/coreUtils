@@ -86,3 +86,56 @@ export async function readdir(options: string|{folderPath: string|string[], filt
   })));
   return info.map(d => Array.isArray(d)?d.flat():d).flat() as any;
 }
+
+export interface fileData {
+  path: string;
+  fullPath: string;
+  type: "file"|"dir"|"blockDevice"|"characterDevice"|"fifo"|"socket"|"symbolicLink";
+  realPath?: string;
+  size?: number;
+  info: {
+    mtime: Date;
+    uid: number;
+    gid: number;
+    mode: number;
+  }
+}
+
+export type filterCallback = (relativePath: string, stats: Stats, fullPath: string) => boolean|Promise<boolean>;
+
+export async function readdirV2(folderPath: string, withStats: true, filter: filterCallback): Promise<fileData[]>;
+export async function readdirV2(folderPath: string, withStats: true): Promise<fileData[]>;
+export async function readdirV2(folderPath: string, filter: filterCallback): Promise<string[]>;
+export async function readdirV2(folderPath: string): Promise<string[]>;
+export async function readdirV2(folderPath: string, ...args: (boolean|filterCallback)[]): Promise<(fileData|string)[]> {
+  let withStats: boolean = args.find(f => typeof f === "boolean") as any;
+  let filter: filterCallback = (args.find(c => typeof c === "function") as any);
+  withStats ??= false
+  filter ??= () => true;
+
+  const filesArray: (fileData|string)[] = [];
+  async function read(fpath: string) {
+    if (!(await Promise.resolve().then(async () => filter(path.relative(folderPath, fpath), await fs.lstat(fpath), fpath)).then(data => !!data))) return;
+    if (!withStats) filesArray.push(fpath);
+    else {
+      const stat = await fs.lstat(fpath);
+      const d: fileData = {
+        path: path.relative(folderPath, fpath),
+        fullPath: fpath,
+        type: stat.isBlockDevice() ? "blockDevice" : stat.isCharacterDevice() ? "characterDevice" : stat.isFIFO() ? "fifo" : stat.isSocket() ? "socket" : stat.isSymbolicLink() ? "symbolicLink" :  stat.isDirectory() ? "dir" : "file",
+        info: {
+          mtime: stat.mtime,
+          gid: stat.gid,
+          uid: stat.uid,
+          mode: stat.mode
+        }
+      }
+      if (d.type === "symbolicLink") d.realPath = await fs.realpath(fpath);
+      if (d.type !== "dir") d.size = stat.size
+      filesArray.push(d);
+    }
+    if (await isDirectory(fpath)) await Promise.all((await fs.readdir(fpath)).map(async f => read(path.join(fpath, f))));
+  }
+  await read(path.resolve(folderPath));
+  return filesArray;
+}
