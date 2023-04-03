@@ -120,9 +120,11 @@ export async function bufferRequest(...args: Parameters<typeof streamRequest>) {
     body: Buffer.concat(buffers),
   };
 }
+export async function bufferRequestBody(...args: Parameters<typeof bufferRequest>) {
+  return (await bufferRequest(...args)).body;
+}
 
 export default jsonRequest;
-
 /**
  * fetch json response
  * @returns

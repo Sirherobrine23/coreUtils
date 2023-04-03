@@ -12,7 +12,6 @@ import path from "node:path";
 export type debianArch = "all"|"armhf"|"i386"|"ia64"|"alpha"|"amd64"|"arc"|"armeb"|"arm"|"arm64"|"avr32"|"hppa"|"m32r"|"m68k"|"mips"|"mipsel"|"mipsr6"|"mipsr6el"|"mips64"|"mips64el"|"mips64r6"|"mips64r6el"|"nios2"|"or1k"|"powerpc"|"powerpcel"|"ppc64"|"ppc64el"|"riscv64"|"s390"|"s390x"|"sh3"|"sh3eb"|"sh4"|"sh4eb"|"sparc"|"sparc64"|"tilegx";
 
 export interface debianControl {
-  [anyKey: string]: string|number|boolean,
   Package: string,
   Architecture: debianArch,
   Version: string,
@@ -23,7 +22,9 @@ export interface debianControl {
   "Original-Maintainer"?: string,
   "Installed-Size"?: number,
   Bugs?: string,
-  Depends?: string,
+  Depends?: string[],
+  "Pre-Depends"?: string[],
+  Tags?: string[],
   Suggests?: string,
   Filename?: string,
   Size?: number,
@@ -36,57 +37,40 @@ export interface debianControl {
   Task?: string,
 };
 
-function findLastChar(data: Buffer) {
-  for (let i = data.length; i >= 0; i--) if (data[i] !== 0x20) return i;
-  return -1;
-}
+const splitKeys = [
+  "Depends",
+  "Pre-Depends",
+  "Recommends",
+  "Replaces",
+  "Suggests",
+  "Breaks",
+  "Tag",
+];
 
-/**
- *
- * @param control - Control buffer file
- * @returns
- */
-export function parseControl(control: Buffer) {
-  if (!control) throw new TypeError("Control is empty");
-  else if (!Buffer.isBuffer(control)) throw new TypeError("Control is not a buffer");
-  const packageData: {value: Buffer, data: Buffer}[] = [];
-
-  for (let chuckLength = 0; chuckLength < control.length; chuckLength++) {
-    // ':' and ' '
-    if (control[chuckLength-1] === 0x3A && control[chuckLength] === 0x20) {
-      // Find break line
-      const key = control.subarray(0, chuckLength-1);
-      control = control.subarray(chuckLength+1);
-      chuckLength = 0;
-      for (let breakLine = 0; breakLine < control.length; breakLine++) {
-        if (control[breakLine] === 0x0A) {
-          const data = control.subarray(0, breakLine);
-          if (data.at(findLastChar(data)) === 0x2e) continue;
-          control = control.subarray(breakLine+1);
-          packageData.push({
-            value: key,
-            data: data,
-          });
-          break;
-        }
-      }
+export function parseControl<T = debianControl>(controlString: string|Buffer): T {
+  if (Buffer.isBuffer(controlString)) controlString = controlString.toString("utf8");
+  let lineSplit = controlString.trim().split("\n");
+  for (let i = 0; i < lineSplit.length; i++) {
+    if (!lineSplit[i]) continue
+    const indexOfKey = lineSplit[i].indexOf(":");
+    if (indexOfKey !== -1 && lineSplit[i][indexOfKey+1] !== " ") {
+      lineSplit[i - 1] += lineSplit[i];
+      delete lineSplit[i];
+      lineSplit = lineSplit.filter(Boolean);
+      i = i-2;
     }
   }
+  const reduced = lineSplit.reduce((acc, line) => {
+    const indexOf = line.indexOf(":");
+    let key: string;
+    acc[(key = line.slice(0, indexOf).trim())] = line.slice(indexOf+1).trim();
+    if ((["Size", "Installed-Size"]).includes(key)) acc[key] = Number(acc[key]);
+    else if (splitKeys.includes(key)) acc[key] = acc[key].split(",").map(str => str.trim());
 
-  const reduced = packageData.reduce((main, curr) => {
-    const keyName = curr.value.toString("utf8").trim();
-    const data = curr.data.toString("utf8").trim().split("\n").map(line => line.trim()).filter(Boolean).map(line => line === "." ? "" : line).join("\n");
-    curr.data = null;
-    curr.value = null;
-    if ((["Size", "Installed-Size"]).includes(keyName)) main[keyName] = Number(data);
-    else main[keyName] = data;
-    return main;
-  }, {} as Partial<debianControl>);
-
-  // check required fields are present
+    return acc;
+  }, {} as any);
   if (!(reduced.Package && reduced.Architecture && reduced.Version)) throw new Error("Control file is invalid");
-
-  return reduced as debianControl;
+  return reduced;
 }
 
 export function createControl(controlObject: debianControl) {
@@ -109,6 +93,7 @@ export function createControl(controlObject: debianControl) {
     }
 
     if (typeof data === "boolean") keyString = `${keyName}: ${data ? "yes" : "no"}`;
+    else if (Array.isArray(data)) keyString = data.join(", ");
     else keyString = `${keyName}: ${String(data)}`;
     if (keyString.length > 0) controlFile.push(keyString)
   }
@@ -191,8 +176,14 @@ export interface packageConfig {
   dataFolder: string;
   control: debianControl;
   compress?: {
-    control?: Exclude<compressAvaible, "zst"|"deflate">;
+    /**
+     * Compress the data.tar tar to the smallest possible size
+     */
     data?: Exclude<compressAvaible, "deflate">;
+    /**
+     * @deprecated Control cause error in ar concat **DONT USE**
+     */
+    control?: Exclude<compressAvaible, |"deflate">;
   }
 }
 
@@ -213,9 +204,12 @@ export function createPackage(packageInfo: packageConfig) {
     const posixNormalize = (path: string) => path.split("\\").join("/");
     const tmpFolder = await fs.mkdtemp(path.join(tmpdir(), "debianstream_"));
     packageInfo.compress ??= {};
+    // Bypass any compress
+    packageInfo.compress.control = "passThrough" as any;
+
     const targsPath = {
       control: path.join(tmpFolder, "control.tar"+(packageInfo.compress.control === "xz" ? ".xz" : packageInfo.compress.control === "gzip" ? ".gz" : "")),
-      data: path.join(tmpFolder, "data.tar"+(packageInfo.compress.data === "xz" ? ".xz" : packageInfo.compress.data === "zst" ? ".zst" : packageInfo.compress.data === "gzip" ? ".gz" : "")),
+      data: path.join(tmpFolder, "data.tar"+(packageInfo.compress.data === "xz" ? ".xz" : packageInfo.compress.data === "gzip" ? ".gz" : "")),
     }
 
     const controlPack = tarStream.pack(), dataPack = tarStream.pack();
@@ -249,7 +243,7 @@ export function createPackage(packageInfo: packageConfig) {
     dataPack.finalize();
     controlPack.finalize();
     await compressed;
-    await this.addFile("2.0\n", "debian-binary", 4);
+    await stream_promise.finished(this.entry("debian-binary", 4).end("2.0\n"));
     await this.addLocalFile(targsPath.control);
     await this.addLocalFile(targsPath.data);
     await fs.rm(tmpFolder, {recursive: true, force: true});

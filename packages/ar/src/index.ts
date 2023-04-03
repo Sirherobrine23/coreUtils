@@ -1,10 +1,10 @@
 import { createReadStream } from "node:fs";
 import { extendsFS } from "@sirherobrine23/extends";
+import { finished } from "node:stream/promises";
 import { format } from "node:util";
 import stream from "node:stream";
 import path from "node:path";
 import fs from "node:fs/promises";
-import { pipeline } from "node:stream/promises";
 
 export type arHeader = {
   name: string,
@@ -181,21 +181,16 @@ export class arStream extends stream.Readable {
     this.#lockWrite = true;
     this.push(null);
   }
-  async addFile(str: stream.Readable|Buffer|string, filename: string, size: number, mtime?: Date): Promise<void> {
+  entry(filename: string, size: number, mtime?: Date) {
     if (this.#lockWrite) throw new Error("Write locked");
     this.#lockWrite = true;
-    let sizeOf = 0;
-    if (Buffer.isBuffer(str)||typeof str === "string") {size = Buffer.byteLength(str); str = stream.Readable.from(str);}
     this.push(createHead(filename, {size, mtime}));
-    await pipeline(str, new stream.Writable({
+    return new stream.Writable({
       write: (chunk: Buffer, encoding, callback) => {
-        sizeOf += Buffer.byteLength(chunk, encoding);
-        if (sizeOf > size) return callback(new Error(`Invalid file size (${sizeOf})`));
-        this.push(chunk);
+        this.push(chunk, encoding);
         callback();
       },
       final: (callback) => {
-        if (sizeOf !== size) return callback(new Error(`Invalid file size (${sizeOf})`));
         this.#lockWrite = false;
         callback();
       },
@@ -203,12 +198,12 @@ export class arStream extends stream.Readable {
         if (!!error) this.emit("error", error);
         callback(error);
       },
-    }));
+    });
   }
   async addLocalFile(filePath: string, filename = path.basename(filePath)) {
     if (!(await extendsFS.isFile(filePath))) throw new Error("path is not file!");
     const stats = await fs.stat(filePath);
-    return await this.addFile(createReadStream(filePath), filename, stats.size, stats.mtime);
+    await finished(createReadStream(filePath).pipe(this.entry(filename, stats.size, stats.mtime)))
   }
 }
 

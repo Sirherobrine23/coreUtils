@@ -1,238 +1,179 @@
-import { debianControl, parseControl } from "./deb.js";
-import { Readable, Writable } from "node:stream";
-import { http } from "@sirherobrine23/http";
+import { parseControl, debianControl } from "./deb.js";
+import { finished } from "stream/promises";
+import coreHTTP from "@sirherobrine23/http";
+import openpgp from "openpgp";
+import stream from "stream";
+import path from "path";
 import decompress from "@sirherobrine23/decompress";
-import path from "node:path";
 
-export function parseSource(data: Buffer) {
-  const lines: Buffer[] = [];
-  for (let bufferLocate = 0; bufferLocate < data.length; bufferLocate++) {
-    if (data[bufferLocate] === 0x0A) {
-      lines.push(data.subarray(0, bufferLocate));
-      data = data.subarray(bufferLocate+1);
-      bufferLocate = 0;
-    }
-  }
-
-  function trimStar(str: Buffer) {
-    for (let i = 0; i < str.length; i++) {
-      if (str[i] === 0x20 || str[i] === 0x09) continue;
-      return str.subarray(i);
-    }
-    return str;
-  }
-
-  return lines.map((curr) => {
-    if (curr.subarray(0, 3).toString().startsWith("deb")) {
-      curr = curr.subarray(3);
-      let isSrc = false;
-      if (curr.subarray(0, 4).toString().startsWith("-src")) {
-        curr = curr.subarray(5);
-        isSrc = true;
-      }
-
-      // Trim start spaces
-      curr = trimStar(curr);
-
-      let Options: Buffer;
-      if (curr[0] === 0x5B) {
-        for (let i = 0; i < curr.length; i++) {
-          if (curr[i] === 0x5D) {
-            Options = curr.subarray(1, i);
-            curr = trimStar(curr.subarray(i+1));
-            break;
-          } else if (curr[i] === 0x20 || curr[i] === 0x09) throw new Error("Invalid sources file, options must be in brackets \"[]\"");
-        }
-      }
-
-
-      let url: Buffer;
-      for (let space = 0; space < curr.length; space++) {
-        if (curr[space] === 0x20 || curr[space] === 0x09) {
-          url = curr.subarray(0, space);
-          curr = trimStar(curr.subarray(space));
-          break;
-        }
-      }
-      const urlMain = new URL(String(url.toString("utf8").trim()));
-
-      // Component
-      let component: Buffer;
-      for (let space = 0; space < curr.length; space++) {
-        if (curr[space] === 0x20 || curr[space] === 0x09) {
-          component = curr.subarray(0, space);
-          curr = trimStar(curr.subarray(space));
-          break;
-        }
-      }
-
-      return {
-        type: isSrc ? "src" : "deb",
-        url: urlMain,
-        component: component.toString("utf8").trim(),
-        options: Options ? Options.toString("utf8").trim().split(/\s+/g).filter(Boolean) : [],
-        dist: curr.toString("utf8").trim().split(/\s+/g).map((curr) => {
-          const comp = curr.trim();
-          const url = new URL(String(urlMain));
-          url.pathname = path.join(url.pathname, component.toString().trim(), comp);
-          return {
-            name: comp,
-            url,
-          };
-        }).filter(Boolean),
-      };
-    }
-    return undefined;
-  }).filter(Boolean);
-}
-
-/**
- * Extract all Packages from binary file (/dists/${distribuition}/${suite}/binary-${arch}/Packages
- *
- * @param streamRead - Packages stream (raw text not gzip or xz)
- * @returns
- */
-export async function parsePackages(streamRead: Readable) {
-  const packageArray: debianControl[] = [];
-  await new Promise<void>((done, reject) => {
-    let oldBuffer: Buffer;
-    streamRead.pipe(new Writable({
-      defaultEncoding: "binary",
-      decodeStrings: true,
-      highWaterMark: 1024,
-      final(callback) {
-        if (oldBuffer?.length > 0) {
-          packageArray.push(parseControl(oldBuffer));
-        }
-        oldBuffer = undefined;
-        callback();
-        done();
-      },
-      write(chunk, encoding, callback) {
-        if (!(encoding === "binary" && Buffer.isBuffer(chunk))) chunk = Buffer.from(chunk, encoding);
-        if (oldBuffer?.length > 0) chunk = Buffer.concat([oldBuffer, chunk]);
-        for (let chunckLength = 0; chunckLength < chunk.length; chunckLength++) {
-          // \n == 0x0A
-          if (chunk[chunckLength] === 0x0A && chunk[chunckLength+1] === 0x0A) {
-            packageArray.push(parseControl(chunk.subarray(0, chunckLength)));
-            chunk = chunk.subarray(chunckLength+2);
-            chunckLength = 0;
-          }
-        }
-        oldBuffer = chunk;
-        callback();
-      },
-    })).on("error", reject);
-  });
-  return packageArray;
-}
-
-export interface releaseType {
+type Sums = {[T in ("MD5Sum"|"SHA512"|"SHA256"|"SHA1")]?: {hash: string, size: number, path: string}[]};
+export interface packageObject extends Sums {
   Origin?: string;
-  Label?: string;
+  Lebel?: string;
   Suite?: string;
   Codename?: string;
-  Date?: Date;
+  Changelogs?: string;
+  Date?:  Date;
   "Valid-Until"?: Date;
+  "Acquire-By-Hash"?: boolean;
+  "No-Support-for-Architecture-all"?: string;
   Architectures?: string[];
   Components?: string[];
   Description?: string;
-  Changelogs?: string;
-  "Acquire-By-Hash"?: boolean;
-  MD5Sum?: {
-    hash: string;
-    fileSize: number;
-    filePath: string
-  }[];
-  SHA512?: {
-    hash: string;
-    fileSize: number;
-    filePath: string
-  }[];
-  SHA256?: {
-    hash: string;
-    fileSize: number;
-    filePath: string
-  }[];
-  SHA1?: {
-    hash: string;
-    fileSize: number;
-    filePath: string
-  }[];
-};
-
-/**
- * Parse Release file from debian repository
- *
- * @param fileData - Buffer from Release file
- * @returns
- */
-export function parseRelease(fileData: Buffer): releaseType {
-  const releaseData: {[key: string]: any} = {};
-  let latestKey: string;
-  for (let chunckLength = 0; chunckLength < fileData.length; chunckLength++) {
-    if (!latestKey && (fileData[chunckLength] === 0x3A && fileData[chunckLength+1] !== 0x3A)) {
-      latestKey = fileData.subarray(0, chunckLength).toString();
-      fileData = fileData.subarray(chunckLength+1);
-      chunckLength = 0;
-      continue;
-    }
-
-    if (fileData[chunckLength] === 0x0A) {
-      if (!latestKey) latestKey = Object.keys(releaseData).at(-1);
-      const value = fileData.subarray(0, chunckLength).toString();
-      fileData = fileData.subarray(chunckLength+1);
-      if (!releaseData[latestKey]) releaseData[latestKey] = value;
-      else if (Array.isArray(releaseData[latestKey])) (releaseData[latestKey] as string[]).push(value);
-      else releaseData[latestKey] = [releaseData[latestKey] as string, value];
-      chunckLength = 0;
-      latestKey = undefined;
-      continue;
-    }
-  }
-
-  // trim strings
-  const sum = /([^\s]+)(\t|\s+)([0-9]+)(\t|\s+)([^\s]+)/;
-  Object.keys(releaseData).forEach(key => {
-    if (typeof releaseData[key] === "string") releaseData[key] = releaseData[key].trim();
-    else if (Array.isArray(releaseData[key])) releaseData[key] = releaseData[key].map(str => {
-      if (typeof str === "string") str = str.trim();
-      if (sum.test(str)) {
-        const [, hash,, size,, file] = sum.exec(str);
-        return {hash, size: parseInt(size), file};
-      };
-      return str;
-    });
-    if (["yes", "no"].includes(releaseData[key])) releaseData[key] = (releaseData[key] === "yes");
-  });
-
-  if (releaseData.Date) releaseData.Date = new Date(releaseData.Date);
-  if (releaseData["Valid-Until"]) releaseData["Valid-Until"] = new Date(releaseData["Valid-Until"]);
-  if (releaseData.Architectures) releaseData.Architectures = releaseData.Architectures.split(" ").map(str => str.trim()).filter(Boolean);
-  if (releaseData.Components) releaseData.Components = releaseData.Components.split(" ").map(str => str.trim()).filter(Boolean);
-  return releaseData;
 }
 
-/**
- * Get debian packages control files from a debian repository
- * @param baseURL - The base URL of the repository example: http://deb.debian.org/debian
- * @param Release - The release file of the repository
- * @returns An object with the components as keys and the architectures as keys and the packages as values
- */
-export async function getPackages(baseURL: string|URL, Release: releaseType) {
-  const packagesObj: {[component: string]: {[arch: string]: debianControl[]}} = {};
-  const { Components, Architectures } = Release;
-  for (const component of Components) {
-    for (const arch of Architectures) {
-      const baseRequest = new URL(String(baseURL));
-      baseRequest.pathname = path.posix.resolve(baseRequest.pathname, component, `binary-${arch}`, "Packages");
-      const packagesURLString = baseRequest.toString();
-      await http.streamRequest(packagesURLString).catch(() => http.streamRequest(packagesURLString+".gz")).catch(() => http.streamRequest(packagesURLString+".xz")).then(str => str.pipe(decompress())).then(async stream => {
-        packagesObj[component] ??= {};
-        packagesObj[component][arch] ??= [];
-        packagesObj[component][arch] = await parsePackages(stream);
-      }).catch(() => {});
+export function parseRelease<T = packageObject>(sourceFile: string): T {
+  /* pretty tabs */ sourceFile = sourceFile.replace(/\t/gi, "  ");
+  let previus: string;
+  const obj = sourceFile.split("\n").reduce((acc, line) => {
+    if (line.startsWith(" ") && previus) {
+      if (typeof acc[previus] === "string") acc[previus] = [acc[previus].trim()];
+      acc[previus].push(line.trim())
+      return acc;
+    }
+    const indexDots = line.indexOf(":");
+    if (indexDots === -1) return acc;
+    previus = undefined
+    acc[(previus = line.slice(0, indexDots))] = line.slice(indexDots+1).trim();
+    if (!(acc[previus])) acc[previus] = [];
+    return acc;
+  }, {} as any);
+  Object.keys(obj).forEach(key => {
+    if (obj[key] === "yes"||obj[key] === "no") obj[key] = obj[key] === "yes";
+    else if ((new Date(obj[key])).toString() !== "Invalid Date") obj[key] = new Date(obj[key]);
+    else if (Array.isArray(obj[key])) {
+      obj[key] = obj[key].map((line: string) => {
+        const hash = line.slice(0, line.indexOf(" "));
+        line = line.slice(line.indexOf(" ")).trim();
+        const size = Number(line.slice(0, line.indexOf(" ")).trim());
+        line = line.slice(line.indexOf(" ")).trim();
+        return {
+          hash,
+          size,
+          path: line,
+        };
+      });
+    }
+  });
+  if (obj.Architectures) obj.Architectures = obj.Architectures.split(/\s+/);
+  if (obj.Components) obj.Components = obj.Components.split(/\s+/);
+  return obj;
+}
+
+export type sourceList = {
+  type: "source"|"packages",
+  src: string,
+  distname: string,
+  components: string[],
+  options?: {[keyName: string]: string}
+}[];
+
+export function parseSourceList(sourceFile: string): sourceList {
+  if (typeof sourceFile !== "string") throw new TypeError("invalid sourceFile");
+  const sourceLines = sourceFile.replace(/\t/gi, "  ").split("\n").filter(line => !(line.trim().startsWith("#") || !line.trim()));
+  return sourceLines.reduce((acc, line) => {
+    if (line.startsWith("deb")) {
+      const isSource = line.startsWith("deb-src"); line = line.slice(line.indexOf(" ")).trim();
+      let options: any, optionsIndexof: number;
+      if (line.startsWith("[") && ((optionsIndexof = line.indexOf("]")) !== -1)) {options = line.slice(1, optionsIndexof).trim(); line = line.slice(optionsIndexof+1).trim();}
+      const src = line.slice(0, line.indexOf(" ")).trim(); line = line.slice(line.indexOf(" ")).trim();
+      const dist = line.slice(0, line.indexOf(" ")).trim(); line = line.slice(line.indexOf(" ")).trim();
+      if (typeof options === "string") {
+        let optionsLine: string = options; options = {};
+        while (optionsLine.trim()) {
+          const key = optionsLine.slice(0, optionsLine.indexOf("="));
+          optionsLine = optionsLine.slice(optionsLine.indexOf("=")+1).trim();
+          options[key] = "";
+          const spaceIndex = optionsLine.indexOf(" ");
+          if (spaceIndex === -1) {
+            options[key] = optionsLine;
+            break;
+          }
+          options[key] = optionsLine.slice(0, spaceIndex).trim();
+          optionsLine = optionsLine.slice(spaceIndex).trim();
+        }
+      }
+      acc.push({
+        type: isSource ? "source" : "packages",
+        src,
+        distname: dist,
+        components: line.split(/\s+/gi),
+        ...((typeof options !== "undefined") ? {options} : {}),
+      });
+    }
+    return acc;
+  }, [] as sourceList);
+}
+
+export interface packageStream extends stream.Writable {
+  on(event: "close", listener: () => void): this;
+  on(event: "drain", listener: () => void): this;
+  on(event: "error", listener: (err: Error) => void): this;
+  on(event: "finish", listener: () => void): this;
+  on(event: "pipe", listener: (src: stream.Readable) => void): this;
+  on(event: "unpipe", listener: (src: stream.Readable) => void): this;
+  on(event: "entry", listener: (control: debianControl) => void): this;
+  on(event: string | symbol, listener: (...args: any[]) => void): this;
+
+  once(event: "close", listener: () => void): this;
+  once(event: "drain", listener: () => void): this;
+  once(event: "error", listener: (err: Error) => void): this;
+  once(event: "finish", listener: () => void): this;
+  once(event: "pipe", listener: (src: stream.Readable) => void): this;
+  once(event: "unpipe", listener: (src: stream.Readable) => void): this;
+  once(event: "entry", listener: (control: debianControl) => void): this;
+  once(event: string | symbol, listener: (...args: any[]) => void): this;
+}
+
+export function parsePackages(): packageStream {
+  let oldBuffer: Buffer;
+  return new stream.Writable({
+    write(chunk: Buffer, encoding, callback) {
+      if (!(Buffer.isBuffer(chunk))) chunk = Buffer.from(chunk, encoding);
+      if (oldBuffer) {chunk = Buffer.concat([oldBuffer, chunk]); oldBuffer = null;}
+      for (let i = 0; i < chunk.length; i++) {
+        if ((chunk[i] === 0x0A) && (chunk[i + 1] === 0x0A)) {
+          const controlBuf = chunk.subarray(0, i);
+          chunk = chunk.subarray(i);
+          try {this.emit("entry", parseControl(controlBuf));} catch {}
+          i = 0;
+          continue;
+        }
+      }
+      if (chunk.length > 0) oldBuffer = chunk;
+      callback();
+    },
+    final(callback) {
+      if (oldBuffer) try {this.emit("entry", parseControl(oldBuffer));} catch {}
+      oldBuffer = null;
+      callback();
+    }
+  });
+}
+
+export async function getRepoPackages(aptSrc: sourceList) {
+  const pkgObj: {[src: string]: {[distName: string]: {[componentName: string]: {[arch: string]: debianControl[]}}}} = {};
+  for (const target of aptSrc) {
+    const main_url = new URL(target.src);
+    const rel = new URL(main_url);
+    rel.pathname = path.posix.join(rel.pathname, "dists", target.distname);
+    const release = parseRelease(await coreHTTP.bufferRequestBody(rel.toString()+"/InRelease").then(async data => (await openpgp.readCleartextMessage({cleartextMessage: data.toString()})).getText()).catch(() => coreHTTP.bufferRequestBody(rel.toString()+"/Release").then(data => data.toString())));
+    for (const Component of release.Components) for (const Arch of release.Architectures) {
+      for (const ext of (["", ".gz", ".xz"])) {
+        const mainReq = new URL(path.join(rel.pathname, Component, `binary-${Arch}`, `Packages${ext}`), rel);
+        try {
+          await coreHTTP.streamRequest(mainReq).then(str => finished(str.pipe(decompress()).pipe(parsePackages()).on("entry", entry => {
+            pkgObj[target.src] ??= {};
+            pkgObj[target.src][target.distname] ??= {};
+            pkgObj[target.src][target.distname][Component] ??= {};
+            pkgObj[target.src][target.distname][Component][Arch] ??= [];
+            pkgObj[target.src][target.distname][Component][Arch].push(entry);
+          })));
+          break;
+        } catch {}
+      }
     }
   }
-  return packagesObj;
+
+  return pkgObj;
 }

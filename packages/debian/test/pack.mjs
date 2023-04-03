@@ -10,6 +10,10 @@ const deb = dpkg.createPackage({
     Package: "test",
     Architecture: "all",
     Version: "1.1.1"
+  },
+  compress: {
+    control: "gzip",
+    data: "gzip",
   }
 });
 await pipeline(deb, createWriteStream(path.join(__dirname, "example.deb")));

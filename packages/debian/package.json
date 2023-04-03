@@ -25,6 +25,7 @@
     "@sirherobrine23/decompress": "3.5.3",
     "@sirherobrine23/extends": "3.5.3",
     "@sirherobrine23/http": "3.5.3",
+    "openpgp": "^5.7.0",
     "tar-stream": "^3.0.0"
   },
   "devDependencies": {
