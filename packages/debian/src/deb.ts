@@ -160,6 +160,24 @@ export async function parsePackage(fileStream: stream.Readable) {
   };
 }
 
+export function packageParseV2() {
+  return Ar().on("entry", (entry, stream) => {
+    if (!(entry.name.startsWith("control.tar")||entry.name.startsWith("data.tar"))) return;
+    const isControl = entry.name.startsWith("control.tar");
+    stream.pipe(decompress()).pipe(tarStream.extract()).on("entry", (entry, fileStream) => {
+      if (isControl) {
+        if (path.basename(entry.name) === "control") {
+          const controlBuf: Buffer[] = [];
+          fileStream.on("data", data => controlBuf.push(data)).once("close", () => {
+            const controlFile = parseControl(Buffer.concat(controlBuf));
+            console.log(controlFile);
+          });
+        }
+      } else {}
+    });
+  });
+}
+
 /**
  * Get tar data end auto descompress
  *
@@ -203,6 +221,7 @@ export function createPackage(packageInfo: packageConfig) {
     else if (await extendsFS.isFile(packageInfo.dataFolder)) throw new TypeError("dataFolder is file");
     const posixNormalize = (path: string) => path.split("\\").join("/");
     const tmpFolder = await fs.mkdtemp(path.join(tmpdir(), "debianstream_"));
+    await stream_promise.finished(this.entry("debian-binary", 4).end("2.0\n"));
     packageInfo.compress ??= {};
     // Bypass any compress
     packageInfo.compress.control = "passThrough" as any;
@@ -243,7 +262,6 @@ export function createPackage(packageInfo: packageConfig) {
     dataPack.finalize();
     controlPack.finalize();
     await compressed;
-    await stream_promise.finished(this.entry("debian-binary", 4).end("2.0\n"));
     await this.addLocalFile(targsPath.control);
     await this.addLocalFile(targsPath.data);
     await fs.rm(tmpFolder, {recursive: true, force: true});

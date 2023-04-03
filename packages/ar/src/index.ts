@@ -184,10 +184,13 @@ export class arStream extends stream.Readable {
   entry(filename: string, size: number, mtime?: Date) {
     if (this.#lockWrite) throw new Error("Write locked");
     this.#lockWrite = true;
-    this.push(createHead(filename, {size, mtime}));
+    this.push(createHead(filename, {size, mtime}), "binary");
     return new stream.Writable({
-      write: (chunk: Buffer, encoding, callback) => {
-        this.push(chunk, encoding);
+      autoDestroy: true,
+      decodeStrings: false,
+      emitClose: true,
+      write: (chunk, encoding, callback) => {
+        this.push(chunk);
         callback();
       },
       final: (callback) => {
@@ -203,7 +206,7 @@ export class arStream extends stream.Readable {
   async addLocalFile(filePath: string, filename = path.basename(filePath)) {
     if (!(await extendsFS.isFile(filePath))) throw new Error("path is not file!");
     const stats = await fs.stat(filePath);
-    await finished(createReadStream(filePath).pipe(this.entry(filename, stats.size, stats.mtime)))
+    await finished(createReadStream(filePath).pipe(this.entry(filename, stats.size, stats.mtime)));
   }
 }
 
