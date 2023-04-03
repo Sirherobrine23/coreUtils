@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/http",
-  "version": "3.5.3",
+  "version": "3.5.5",
   "description": "",
   "type": "module",
   "main": "src/index.js",
@@ -21,7 +21,7 @@
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
   "dependencies": {
-    "@sirherobrine23/extends": "3.5.3",
+    "@sirherobrine23/extends": "3.5.5",
     "acme-client": "^5.0.0",
     "adm-zip": "^0.5.10",
     "got": "^12.6.0",
