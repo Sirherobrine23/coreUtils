@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/decompress",
-  "version": "3.5.5",
+  "version": "3.5.6",
   "description": "detect and auto decompress stream if avaible",
   "type": "module",
   "main": "src/index.js",
