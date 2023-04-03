@@ -49,13 +49,22 @@ export function createHash(target?: "all"|hashAlgorithm, digestText?: crypto.Bin
   if ((["all", "sha1"]).includes(target)) crypHash.sha1 = crypto.createHash("sha1");
   // md5
   if ((["all", "md5"]).includes(target)) crypHash.md5 = crypto.createHash("md5");
-  let dataReceived = 0;
+  let byteLength = 0;
   return new stream.Writable({
+    write(chunk, encoding, callback) {
+      byteLength += Buffer.byteLength(chunk, encoding);
+      for (const key in crypHash) {
+        try {
+          crypHash[key as hashAlgorithm].update(chunk);
+        } catch (err) {
+          this.emit("error", err);
+          return callback(err);
+        }
+      }
+      callback();
+    },
     final(callback) {
-      const crypDigest: hashObject = {
-        byteLength: dataReceived,
-        hash: {},
-      };
+      const crypDigest: hashObject = {byteLength, hash: {}};
       for (const key in crypHash) {
         try {
           crypDigest.hash[key] = crypHash[key as hashAlgorithm].digest(digestText || "hex");
@@ -68,24 +77,12 @@ export function createHash(target?: "all"|hashAlgorithm, digestText?: crypto.Bin
       this.emit("hashObject", crypDigest);
       callback();
     },
-    write(chunk, encoding, callback) {
-      dataReceived += Buffer.byteLength(chunk, encoding);
-      for (const key in crypHash) {
-        try {
-          crypHash[key as hashAlgorithm].update(chunk);
-        } catch (err) {
-          this.emit("error", err);
-          return callback(err);
-        }
-      }
-      callback();
-    }
   });
 }
 
 export async function createHashAsync(from: stream.Readable|Buffer|string, ...args: Parameters<typeof createHash>) {
   return new Promise<hashObject>((resolve, reject) => {
     if (from instanceof Buffer||typeof from === "string") from = stream.Readable.from(Buffer.from(from));
-    return from.pipe(createHash(...args)).once("hashObject", resolve).on("error", reject);
+    return from.pipe(createHash(...args)).on("hashObject", resolve).on("error", reject);
   });
 }

@@ -90,7 +90,7 @@ export async function readdir(options: string|{folderPath: string|string[], filt
 export interface fileData {
   path: string;
   fullPath: string;
-  type: "file"|"dir"|"blockDevice"|"characterDevice"|"fifo"|"socket"|"symbolicLink";
+  type: "file"|"directory"|"blockDevice"|"characterDevice"|"fifo"|"socket"|"symbolicLink";
   realPath?: string;
   size?: number;
   info: {
@@ -122,7 +122,7 @@ export async function readdirV2(folderPath: string, ...args: (boolean|filterCall
       const d: fileData = {
         path: path.relative(folderPath, fpath),
         fullPath: fpath,
-        type: stat.isBlockDevice() ? "blockDevice" : stat.isCharacterDevice() ? "characterDevice" : stat.isFIFO() ? "fifo" : stat.isSocket() ? "socket" : stat.isSymbolicLink() ? "symbolicLink" :  stat.isDirectory() ? "dir" : "file",
+        type: stat.isBlockDevice() ? "blockDevice" : stat.isCharacterDevice() ? "characterDevice" : stat.isFIFO() ? "fifo" : stat.isSocket() ? "socket" : stat.isSymbolicLink() ? "symbolicLink" :  stat.isDirectory() ? "directory" : "file",
         info: {
           mtime: stat.mtime,
           gid: stat.gid,
@@ -131,7 +131,7 @@ export async function readdirV2(folderPath: string, ...args: (boolean|filterCall
         }
       }
       if (d.type === "symbolicLink") d.realPath = await fs.realpath(fpath);
-      if (d.type !== "dir") d.size = stat.size
+      if (d.type !== "directory") d.size = stat.size
       filesArray.push(d);
     }
     if (await isDirectory(fpath)) await Promise.all((await fs.readdir(fpath)).map(async f => read(path.join(fpath, f))));

@@ -1,10 +1,9 @@
-import { createReadStream } from "node:fs";
+import oldFs, { promises as fs } from "node:fs";
 import { extendsFS } from "@sirherobrine23/extends";
 import { finished } from "node:stream/promises";
 import { format } from "node:util";
 import stream from "node:stream";
 import path from "node:path";
-import fs from "node:fs/promises";
 
 export type arHeader = {
   name: string,
@@ -59,7 +58,10 @@ export function parse(): arParse {
     highWaterMark: 1024,
     final(callback) {
       if (fileStream && oldBuffer) {
-        if (!fileStream.destroyed||fileStream.readable) fileStream.push(oldBuffer.subarray(0, fileStreamSize));
+        if (!fileStream.destroyed||fileStream.readable) {
+          fileStream.push(oldBuffer.subarray(0, fileStreamSize));
+          fileStream.push(null);
+        }
       }
       oldBuffer = undefined;
       callback();
@@ -139,7 +141,7 @@ export function parse(): arParse {
           if (!fileStream.destroyed||fileStream.readable) fileStream.push(fileSize);
           fileStreamSize -= fileSize.length;
 
-          if (fileStreamSize === 0) {
+          if (fileStreamSize <= 0) {
             if (!fileStream.destroyed||fileStream.readable) fileStream.push(null);
             fileStream = undefined;
             fileStreamSize = undefined;
@@ -190,7 +192,7 @@ export class arStream extends stream.Readable {
       decodeStrings: false,
       emitClose: true,
       write: (chunk, encoding, callback) => {
-        this.push(chunk);
+        this.push(chunk, encoding);
         callback();
       },
       final: (callback) => {
@@ -206,7 +208,7 @@ export class arStream extends stream.Readable {
   async addLocalFile(filePath: string, filename = path.basename(filePath)) {
     if (!(await extendsFS.isFile(filePath))) throw new Error("path is not file!");
     const stats = await fs.stat(filePath);
-    await finished(createReadStream(filePath).pipe(this.entry(filename, stats.size, stats.mtime)));
+    await finished(oldFs.createReadStream(filePath).pipe(this.entry(filename, stats.size, stats.mtime)));
   }
 }
 

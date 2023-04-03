@@ -38,13 +38,14 @@ export interface debianControl {
 };
 
 const splitKeys = [
+  "Tag",
   "Depends",
   "Pre-Depends",
   "Recommends",
   "Replaces",
   "Suggests",
   "Breaks",
-  "Tag",
+  "Provides",
 ];
 
 export function parseControl<T = debianControl>(controlString: string|Buffer): T {
@@ -54,6 +55,13 @@ export function parseControl<T = debianControl>(controlString: string|Buffer): T
     if (!lineSplit[i]) continue
     const indexOfKey = lineSplit[i].indexOf(":");
     if (indexOfKey !== -1 && lineSplit[i][indexOfKey+1] !== " ") {
+      lineSplit[i - 1] += "\n";
+      lineSplit[i - 1] += lineSplit[i];
+      delete lineSplit[i];
+      lineSplit = lineSplit.filter(Boolean);
+      i = i-2;
+    } else if (indexOfKey === -1) {
+      lineSplit[i - 1] += "\n";
       lineSplit[i - 1] += lineSplit[i];
       delete lineSplit[i];
       lineSplit = lineSplit.filter(Boolean);
@@ -66,6 +74,7 @@ export function parseControl<T = debianControl>(controlString: string|Buffer): T
     acc[(key = line.slice(0, indexOf).trim())] = line.slice(indexOf+1).trim();
     if ((["Size", "Installed-Size"]).includes(key)) acc[key] = Number(acc[key]);
     else if (splitKeys.includes(key)) acc[key] = acc[key].split(",").map(str => str.trim());
+    else if (key === "Description") acc[key] = acc[key].split("\n").map(str => {if ((str = str.trim()) === ".") str = ""; return str;}).join("\n");
 
     return acc;
   }, {} as any);
@@ -74,107 +83,58 @@ export function parseControl<T = debianControl>(controlString: string|Buffer): T
 }
 
 export function createControl(controlObject: debianControl) {
+  if (!(controlObject.Package && controlObject.Architecture && controlObject.Version)) throw new Error("Control is invalid");
   let controlFile: string[] = [];
   for (const keyName in controlObject) {
     let data = controlObject[keyName];
     // Ignore undefined and null values
-    if (data === undefined||data === null) continue;
-    let keyString = "";
+    if (data === undefined||data === null||data === "") continue;
     if (keyName === "Description") {
       if (typeof data !== "string") throw new TypeError("Description must be a string");
       else {
         data = data.split("\n").map((line, index) => {
           line = line.trim();
           if (index === 0) return line;
-          if (line.length < 1 || line === ".") return  `  .`;
-          return `  ${line}`;
+          if (line.length < 1 || line === ".") return  ` .`;
+          return ` ${line}`;
         }).join("\n");
       }
     }
 
-    if (typeof data === "boolean") keyString = `${keyName}: ${data ? "yes" : "no"}`;
-    else if (Array.isArray(data)) keyString = data.join(", ");
-    else keyString = `${keyName}: ${String(data)}`;
-    if (keyString.length > 0) controlFile.push(keyString)
+
+    let keyString = `${keyName}: `;
+    if (typeof data === "boolean") keyString += data ? "yes" : "no";
+    else if (Array.isArray(data)) keyString += data.join(", ");
+    else keyString += String(data);
+    controlFile.push(keyString)
   }
 
   // Add break line to end
   return controlFile.join("\n");
 }
 
-/**
- * Parse package, add File size and Hashs
- * @param fileStream - Debian file stream
- * @returns control file
- */
-export async function parsePackage(fileStream: stream.Readable) {
-  const arParse = fileStream.pipe(Ar());
-  const filesData: ({path: string} & ({type: "file", size: number}|{type: "folder"}))[] = [];
-
-  const dataPromises = await Promise.all([
-    extendsCrypto.createHashAsync(fileStream),
-    new Promise<debianControl>((done, reject) => {
-      let loaded = false;
-      arParse.once("close", () => (!loaded)?reject(new Error("Invalid debian package")):null);
-      arParse.on("entry", async (info, stream) => {
-        const fileBasename = path.basename(info.name).trim();
-        if (!(fileBasename.startsWith("control.tar"))) return stream.on("error", reject);
-        loaded = true;
-        return stream.pipe(decompress()).pipe(tarStream.extract()).on("error", reject).on("entry", (head, str) => {
-          if (path.basename(head.name) === "control") {
-            let controlFile: Buffer[] = [];
-            return str.on("data", chuck => controlFile.push(chuck)).on("error", reject).on("end", () => done(parseControl(Buffer.concat(controlFile))));
-          }
-          return null;
-        });
-      });
-    }),
-    new Promise<void>((done, reject) => {
-      let loaded = false;
-      arParse.once("close", () => {if (!loaded) return reject(new Error("Invalid debian package"))}).on("entry", async (info, stream) => {
-        const fileBasename = path.basename(info.name).trim();
-        if (!(fileBasename.startsWith("data.tar"))) return stream.on("error", reject);
-        return stream.pipe(decompress()).pipe(tarStream.extract()).on("entry", (entry) => {
-          const fixedPath = path.posix.resolve("/", entry.name);
-          if (entry.type === "file") filesData.push({
-            type: "file",
-            path: fixedPath,
-            size: entry.size
-          }); else filesData.push({
-            type: "folder",
-            path: fixedPath
-          });
-        }).on("error" as any, reject).on("end", done);
-      });
-    }),
-  ]);
-
-  dataPromises[1]["Size"] = dataPromises[0].byteLength;
-  dataPromises[1]["MD5Sum"] = dataPromises[0].hash.md5;
-  dataPromises[1]["SHA512"] = dataPromises[0].hash.sha512;
-  dataPromises[1]["SHA256"] = dataPromises[0].hash.sha256;
-  dataPromises[1]["SHA1"] = dataPromises[0].hash.sha1;
-  return {
-    control: dataPromises[1],
-    files: filesData
-  };
-}
-
-export function packageParseV2() {
-  return Ar().on("entry", (entry, stream) => {
-    if (!(entry.name.startsWith("control.tar")||entry.name.startsWith("data.tar"))) return;
-    const isControl = entry.name.startsWith("control.tar");
-    stream.pipe(decompress()).pipe(tarStream.extract()).on("entry", (entry, fileStream) => {
-      if (isControl) {
-        if (path.basename(entry.name) === "control") {
-          const controlBuf: Buffer[] = [];
-          fileStream.on("data", data => controlBuf.push(data)).once("close", () => {
-            const controlFile = parseControl(Buffer.concat(controlBuf));
-            console.log(controlFile);
-          });
-        }
-      } else {}
+export async function parsePackage(debStream: stream.Readable, lowPackge: boolean = false) {
+  const arStr = debStream.pipe(Ar());
+  const hashPromise = extendsCrypto.createHashAsync(debStream);
+  return new Promise<debianControl>((done, reject) => arStr.on("entry", (entry, fileStream) => {
+    if (!(entry.name.startsWith("control.tar"))) return null;
+    fileStream.pipe(decompress()).pipe(tarStream.extract()).on("error", reject).on("entry", async (entry, str, next) => {
+      const controlArray: Buffer[] = [];
+      if (path.basename(entry.name) === "control") {
+        await stream_promise.finished(str.on("data", data => controlArray.push(data)));
+        return done(parseControl(Buffer.concat(controlArray)));
+      }
+      return next();
     });
+  })).then(async control => {
+    if (lowPackge) return control;
+    const { byteLength, hash } = await hashPromise;
+    control["Size"] = byteLength;
+    control.SHA512 = hash.sha512;
+    control.SHA256 = hash.sha256;
+    control.SHA1 = hash.sha1;
+    control.MD5sum = hash.md5;
+    return control;
   });
 }
 
@@ -216,55 +176,42 @@ export interface packageConfig {
  * @returns .deb file stream
  */
 export function createPackage(packageInfo: packageConfig) {
-  return createStream(async function packDeb() {
+  const com = (packageInfo.compress || {data: "gzip", control: "passThrough"});
+  if (!(com.control === undefined || com.control === "passThrough")) {com.control = "passThrough"; console.warn("Disable control.tar compress");}
+  const controlFilename = "control.tar",
+  dataFilename = "data.tar"+(com.data === "xz" ? ".xz" : com.data === "gzip" ? ".gz" : "");
+
+  // return stream
+  return createStream(async function pack() {
     if (!(await extendsFS.exists(packageInfo?.dataFolder))) throw new TypeError("required dataFolder to create data.tar");
     else if (await extendsFS.isFile(packageInfo.dataFolder)) throw new TypeError("dataFolder is file");
-    const posixNormalize = (path: string) => path.split("\\").join("/");
-    const tmpFolder = await fs.mkdtemp(path.join(tmpdir(), "debianstream_"));
+    const filesStorage = await fs.mkdtemp(path.join(tmpdir(), "debianPack_"));
+    // Write debian-binary
     await stream_promise.finished(this.entry("debian-binary", 4).end("2.0\n"));
-    packageInfo.compress ??= {};
-    // Bypass any compress
-    packageInfo.compress.control = "passThrough" as any;
 
-    const targsPath = {
-      control: path.join(tmpFolder, "control.tar"+(packageInfo.compress.control === "xz" ? ".xz" : packageInfo.compress.control === "gzip" ? ".gz" : "")),
-      data: path.join(tmpFolder, "data.tar"+(packageInfo.compress.data === "xz" ? ".xz" : packageInfo.compress.data === "gzip" ? ".gz" : "")),
-    }
+    // control file
+    const controlData = createControl(packageInfo.control);
+    const con = tarStream.pack(), conSave = con.pipe(createWriteStream(path.join(filesStorage, controlFilename)));
+    con.entry({name: "./control"}, controlData, () => con.finalize());
+    await stream_promise.finished(conSave).then(() => this.addLocalFile(path.join(filesStorage, controlFilename))).then(() => fs.rm(path.join(filesStorage, controlFilename), {force: true}));
 
-    const controlPack = tarStream.pack(), dataPack = tarStream.pack();
-    const compressed = Promise.all([
-      stream_promise.pipeline(controlPack.pipe(compress(packageInfo.compress.control || "passThrough")), createWriteStream(targsPath.control)),
-      stream_promise.pipeline(dataPack.pipe(compress(packageInfo.compress.data || "passThrough")), createWriteStream(targsPath.data)),
-    ]);
-
-    // Control file
-    const controlFile = createControl(packageInfo.control);
-    await stream_promise.pipeline(controlFile, controlPack.entry({name: "./control", size: Buffer.byteLength(controlFile)}));
-
-    // data tarball
-    const dataFiles = await extendsFS.readdirV2(packageInfo.dataFolder, true, (fpath) => !(fpath.startsWith("DEBIAN")||fpath.startsWith("debian")));
-    for (const target of dataFiles) {
-      if (!(target.type === "file" || target.type === "dir" || target.type === "symbolicLink")) continue;
-      const entry = dataPack.entry({
-        name: posixNormalize(target.path),
-        linkname: target.realPath ? posixNormalize(target.realPath) : undefined,
-        type: target.type === "dir" ? "directory" : target.type === "symbolicLink" ? "symlink" : "file",
-        size: target.size,
-        gid: target.info.gid,
-        uid: target.info.uid,
-        mtime: target.info.mtime,
-        mode: target.info.mode
+    // Data tarball
+    const compressStr = compress(com.data || "passThrough");
+    const data = tarStream.pack(), dataSave = data.pipe(compressStr).pipe(createWriteStream(path.join(filesStorage, dataFilename)));
+    const filesFolder = await extendsFS.readdirV2(packageInfo.dataFolder, true);
+    for (const file of filesFolder) {
+      if (file.path.startsWith("DEBIAN")||file.path.startsWith("debian")||!(file.type === "file"||file.type === "directory")) continue;
+      const entry = data.entry({
+        name: path.posix.resolve(path.posix.sep, file.path.split(path.sep).join(path.posix.sep)),
+        type: file.type,
+        size: file.size
       });
-      if (target.type === "file") await stream_promise.pipeline(createReadStream(target.fullPath), entry);
-      else await stream_promise.finished(entry.end());
+      if (file.type === "file") createReadStream(file.fullPath).pipe(entry);
+      else entry.end();
+      await stream_promise.finished(entry);
     }
-
-    dataPack.finalize();
-    controlPack.finalize();
-    await compressed;
-    await this.addLocalFile(targsPath.control);
-    await this.addLocalFile(targsPath.data);
-    await fs.rm(tmpFolder, {recursive: true, force: true});
-    this.close();
+    data.finalize();
+    await stream_promise.finished(dataSave).then(() => this.addLocalFile(path.join(filesStorage, dataFilename))).then(() => fs.rm(path.join(filesStorage, dataFilename), {force: true}));
+    await fs.rm(filesStorage, {recursive: true, force: true});
   });
 }
