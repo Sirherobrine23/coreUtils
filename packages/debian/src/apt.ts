@@ -1,10 +1,11 @@
 import { parseControl, debianControl } from "./deb.js";
 import { finished } from "stream/promises";
+import EventEmitter from "events";
+import decompress from "@sirherobrine23/decompress";
 import coreHTTP from "@sirherobrine23/http";
 import openpgp from "openpgp";
 import stream from "stream";
 import path from "path";
-import decompress from "@sirherobrine23/decompress";
 
 type Sums = {[T in ("MD5Sum"|"SHA512"|"SHA256"|"SHA1")]?: {hash: string, size: number, path: string}[]};
 export interface packageObject extends Sums {
@@ -77,7 +78,8 @@ export function parseSourceList(sourceFile: string): sourceList {
       let options: any, optionsIndexof: number;
       if (line.startsWith("[") && ((optionsIndexof = line.indexOf("]")) !== -1)) {options = line.slice(1, optionsIndexof).trim(); line = line.slice(optionsIndexof+1).trim();}
       const src = line.slice(0, line.indexOf(" ")).trim(); line = line.slice(line.indexOf(" ")).trim();
-      const dist = line.slice(0, line.indexOf(" ")).trim(); line = line.slice(line.indexOf(" ")).trim();
+      const distname = line.slice(0, line.indexOf(" ")).trim(); line = line.slice(line.indexOf(" ")).trim();
+      if (!distname) throw new Error("Invalid config source");
       if (typeof options === "string") {
         let optionsLine: string = options; options = {};
         while (optionsLine.trim()) {
@@ -93,13 +95,9 @@ export function parseSourceList(sourceFile: string): sourceList {
           optionsLine = optionsLine.slice(spaceIndex).trim();
         }
       }
-      acc.push({
-        type: isSource ? "source" : "packages",
-        src,
-        distname: dist,
-        components: line.split(/\s+/gi),
-        ...((typeof options !== "undefined") ? {options} : {}),
-      });
+      const components = line.split(/\s+/gi).filter(Boolean);
+      if (!components.length) throw new Error("Invalid config source");
+      acc.push({type: isSource ? "source" : "packages", src, distname, components, ...((typeof options !== "undefined") ? {options} : {})});
     }
     return acc;
   }, [] as sourceList);
@@ -151,29 +149,49 @@ export function parsePackages(): packageStream {
   });
 }
 
-export async function getRepoPackages(aptSrc: sourceList) {
-  const pkgObj: {[src: string]: {[distName: string]: {[componentName: string]: {[arch: string]: debianControl[]}}}} = {};
-  for (const target of aptSrc) {
-    const main_url = new URL(target.src);
-    const rel = new URL(main_url);
-    rel.pathname = path.posix.join(rel.pathname, "dists", target.distname);
-    const release = parseRelease(await coreHTTP.bufferRequestBody(rel.toString()+"/InRelease").then(async data => (await openpgp.readCleartextMessage({cleartextMessage: data.toString()})).getText()).catch(() => coreHTTP.bufferRequestBody(rel.toString()+"/Release").then(data => data.toString())));
-    for (const Component of release.Components) for (const Arch of release.Architectures) {
-      for (const ext of (["", ".gz", ".xz"])) {
-        const mainReq = new URL(path.join(rel.pathname, Component, `binary-${Arch}`, `Packages${ext}`), rel);
-        try {
-          await coreHTTP.streamRequest(mainReq).then(str => finished(str.pipe(decompress()).pipe(parsePackages()).on("entry", entry => {
-            pkgObj[target.src] ??= {};
-            pkgObj[target.src][target.distname] ??= {};
-            pkgObj[target.src][target.distname][Component] ??= {};
-            pkgObj[target.src][target.distname][Component][Arch] ??= [];
-            pkgObj[target.src][target.distname][Component][Arch].push(entry);
-          })));
-          break;
-        } catch {}
-      }
-    }
-  }
+export declare interface packageList extends EventEmitter {
+  emit(event: "error", err: any): boolean;
+  on(event: "error", fn: (err: any) => void): this;
+  once(event: "error", fn: (err: any) => void): this;
 
-  return pkgObj;
+  emit(event: "close"): boolean;
+  on(event: "close", fn: () => void): this;
+  once(event: "close", fn: () => void): this;
+
+  emit(event: "package", src: string, distname: string, componentName: string, arch: string, control: debianControl): boolean;
+  on(event: "package", fn: (src: string, distname: string, componentName: string, arch: string, control: debianControl) => void): this;
+  once(event: "package", fn: (src: string, distname: string, componentName: string, arch: string, control: debianControl) => void): this;
+}
+
+export class packageList extends EventEmitter {
+  constructor(aptSrc: sourceList) {
+    super({captureRejections: true});
+    (async () => {
+      for (const target of aptSrc) {
+        const main_url = new URL(target.src);
+        const rel = new URL(main_url);
+        rel.pathname = path.posix.join(rel.pathname, "dists", target.distname);
+        const release = parseRelease(await coreHTTP.bufferRequestBody(rel.toString()+"/InRelease").then(async data => (await openpgp.readCleartextMessage({cleartextMessage: data.toString()})).getText()).catch(() => coreHTTP.bufferRequestBody(rel.toString()+"/Release").then(data => data.toString())));
+        for (const Component of release.Components) for (const Arch of release.Architectures) {
+          for (const ext of (["", ".gz", ".xz"])) {
+            const mainReq = new URL(path.posix.join(rel.pathname, Component, `binary-${Arch}`, `Packages${ext}`), rel);
+            try {
+              const str = (await coreHTTP.streamRequest(mainReq)).pipe(decompress()).pipe(parsePackages());
+              str.on("entry", entry => this.emit("package", target.src, target.distname, Component, Arch, entry));
+              await finished(str);
+              break;
+            } catch (err) {
+              this.emit("error", err);
+            }
+          }
+        }
+      }
+      this.emit("close");
+      this.removeAllListeners();
+    })().catch(err => this.emit("error", err));
+  }
+}
+
+export function getRepoPackages(aptSrc: sourceList) {
+  return new packageList(aptSrc);
 }
