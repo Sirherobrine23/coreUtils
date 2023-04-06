@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/ar",
-  "version": "3.5.6",
+  "version": "3.5.8",
   "description": "",
   "type": "module",
   "main": "src/index.js",
@@ -19,7 +19,7 @@
   },
   "keywords": [],
   "dependencies": {
-    "@sirherobrine23/extends": "3.5.6"
+    "@sirherobrine23/extends": "3.5.8"
   },
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0"

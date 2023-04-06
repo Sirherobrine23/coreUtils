@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/docker-registry",
-  "version": "3.5.6",
+  "version": "3.5.8",
   "description": "Maneger package/image registry",
   "type": "module",
   "main": "src/index.js",
@@ -24,8 +24,8 @@
     "postpack": "tsc --build --clean"
   },
   "dependencies": {
-    "@sirherobrine23/decompress": "3.5.6",
-    "@sirherobrine23/http": "3.5.6",
+    "@sirherobrine23/decompress": "3.5.8",
+    "@sirherobrine23/http": "3.5.8",
     "tar-stream": "^3.0.0"
   },
   "devDependencies": {

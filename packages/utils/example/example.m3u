@@ -1,5 +1,0 @@
-#EXTM3U
-#EXTINF:-1 tvg-id="" tvg-name="Example 1" tvg-logo="" group-title="One 2"
-http://example.com/test_1
-#EXTINF:-1 tvg-id="" tvg-name="Test" tvg-logo="" group-title="Test 23"
-http://example.com/test_2

@@ -14,7 +14,6 @@
   "workspaces": [
     "packages/ar",
     "packages/page_index",
-    "packages/utils",
     "packages/descompress",
     "packages/extends",
     "packages/http",
