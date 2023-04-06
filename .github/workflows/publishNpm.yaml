@@ -58,7 +58,7 @@ jobs:
           files: "*.tgz"
 
       - name: Create pull request
-        uses: peter-evans/create-pull-request@v4
+        uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: sync_${{ github.event.release.tag_name }}
