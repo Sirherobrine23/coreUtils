@@ -1,4 +1,3 @@
-export * from "./auth.js";
-export * from "./image.js";
-export * from "./registry.js"
-export * as Utils from "./utils.js"
+export * as dockerRegistry from "./index_main.js";
+export * as default from "./index_main.js";
+export * from "./index_main.js";

@@ -62,6 +62,9 @@ export class parseImage {
   }
 }
 
+export type goSystem = Exclude<NodeJS.Platform, "win32"|"sunos">|"windows"|"solaris";
+export type goArch = Exclude<NodeJS.Architecture, "x64">|"amd64";
+
 const onGo = {
   arch: {
     x64: "amd64"
@@ -71,7 +74,6 @@ const onGo = {
     sunos: "solaris"
   }
 }
-
 export function nodeToGO(target: keyof typeof onGo, src: string): string {
   if (!onGo[target]) throw new TypeError("OK Google!");
   return onGo[target][src] ?? src;

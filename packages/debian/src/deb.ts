@@ -48,24 +48,27 @@ const splitKeys = [
   "Provides",
 ];
 
+const archTest = ["all", "armhf", "i386", "ia64", "alpha", "amd64", "arc", "armeb", "arm", "arm64", "avr32", "hppa", "m32r", "m68k", "mips", "mipsel", "mipsr6", "mipsr6el", "mips64", "mips64el", "mips64r6", "mips64r6el", "nios2", "or1k", "powerpc", "powerpcel", "ppc64", "ppc64el", "riscv64", "s390", "s390x", "sh3", "sh3eb", "sh4", "sh4eb", "sparc", "sparc64", "tilegx"];
+
 export function parseControl<T = debianControl>(controlString: string|Buffer): T {
   if (Buffer.isBuffer(controlString)) controlString = controlString.toString("utf8");
   let lineSplit = controlString.trim().split("\n");
   for (let i = 0; i < lineSplit.length; i++) {
-    if (!lineSplit[i]) continue
+    if (!lineSplit[i]) continue;
     const indexOfKey = lineSplit[i].indexOf(":");
-    if (indexOfKey !== -1 && lineSplit[i][indexOfKey+1] !== " ") {
+    if (indexOfKey === -1) {
       lineSplit[i - 1] += "\n";
       lineSplit[i - 1] += lineSplit[i];
       delete lineSplit[i];
       lineSplit = lineSplit.filter(Boolean);
       i = i-2;
-    } else if (indexOfKey === -1) {
-      lineSplit[i - 1] += "\n";
-      lineSplit[i - 1] += lineSplit[i];
-      delete lineSplit[i];
-      lineSplit = lineSplit.filter(Boolean);
-      i = i-2;
+    } else if (indexOfKey !== -1) {
+      if (!(/[a-zA-Z\s]/.test(lineSplit[i][indexOfKey+1]))) {
+        lineSplit[i - 1] += "\n" + lineSplit[i];
+        delete lineSplit[i];
+        lineSplit = lineSplit.filter(Boolean);
+        i = i-2;
+      }
     }
   }
   const reduced = lineSplit.reduce((acc, line) => {
@@ -74,11 +77,16 @@ export function parseControl<T = debianControl>(controlString: string|Buffer): T
     acc[(key = line.slice(0, indexOf).trim())] = line.slice(indexOf+1).trim();
     if ((["Size", "Installed-Size"]).includes(key)) acc[key] = Number(acc[key]);
     else if (splitKeys.includes(key)) acc[key] = acc[key].split(",").map(str => str.trim());
-    else if (key === "Description") acc[key] = acc[key].split("\n").map(str => {if ((str = str.trim()) === ".") str = ""; return str;}).join("\n");
-
+    else if (key === "Description") {
+      const keysLe: string[] = acc[key].split("\n");
+      let Space = /^(\s+)/;
+      const spaceSkip = Array.from(new Set(keysLe.map(key => !(Space.test(key)) ? -1 : Space.exec(key).at(0).length).filter(a => a > 0).sort((a, b) => a - b))).at(0) ?? 1;
+      acc[key] = keysLe.map((line, index) => line.trim() === "." ? "" : (index > 0 ? line.slice(spaceSkip) : line.trim())).join("\n");
+    }
     return acc;
   }, {} as any);
   if (!(reduced.Package && reduced.Architecture && reduced.Version)) throw new Error("Control file is invalid");
+  if (!(archTest.includes(reduced.Architecture))) throw new Error("Invalid package architecture!");
   return reduced;
 }
 
@@ -102,11 +110,11 @@ export function createControl(controlObject: debianControl) {
     }
 
 
-    let keyString = `${keyName}: `;
+    let keyString = keyName + ": ";
     if (typeof data === "boolean") keyString += data ? "yes" : "no";
     else if (Array.isArray(data)) keyString += data.join(", ");
     else keyString += String(data);
-    controlFile.push(keyString)
+    controlFile.push(keyString);
   }
 
   // Add break line to end

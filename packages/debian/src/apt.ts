@@ -154,9 +154,9 @@ export declare interface packageList extends EventEmitter {
   on(event: "error", fn: (err: any) => void): this;
   once(event: "error", fn: (err: any) => void): this;
 
-  emit(event: "close"): boolean;
-  on(event: "close", fn: () => void): this;
-  once(event: "close", fn: () => void): this;
+  emit(event: "close"|"end"): boolean;
+  on(event: "close"|"end", fn: () => void): this;
+  once(event: "close"|"end", fn: () => void): this;
 
   emit(event: "package", src: string, distname: string, componentName: string, arch: string, control: debianControl): boolean;
   on(event: "package", fn: (src: string, distname: string, componentName: string, arch: string, control: debianControl) => void): this;
@@ -187,6 +187,7 @@ export class packageList extends EventEmitter {
         }
       }
       this.emit("close");
+      this.emit("end");
       this.removeAllListeners();
     })().catch(err => this.emit("error", err));
   }

@@ -1,4 +1,7 @@
-import { Stats } from "node:fs";
+import { Stats, createWriteStream } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { finished } from "node:stream/promises";
+import stream from "node:stream";
 import path from "node:path";
 import fs from "node:fs/promises";
 
@@ -138,4 +141,23 @@ export async function readdirV2(folderPath: string, ...args: (boolean|filterCall
   }
   await read(path.resolve(folderPath));
   return filesArray;
+}
+
+export async function createRandomFile(filePath: string, fileSize: number) {
+  if (fileSize < 0 || (isNaN(fileSize)||fileSize === Infinity)) throw new Error("Require positive file size and not Infinity");
+  const str = createWriteStream(filePath);
+  (new stream.Readable({
+    emitClose: true,
+    highWaterMark: 32,
+    read() {
+      if (fileSize > 0) {
+        const dtr = randomBytes(Math.min(32, fileSize));
+        fileSize = fileSize - dtr.byteLength;
+        return this.push(dtr);
+      }
+      return this.push(null);
+    },
+  })).pipe(str);
+  await finished(str);
+  return fs.lstat(filePath);
 }

@@ -20,6 +20,7 @@ export class Auth {
   #auth: userAuth;
   #image: parseImage;
   #action: tokenAction;
+  actionHas(rec: tokenAction) {return this.#action === rec;}
 
   token: string;
   access_token?: string;

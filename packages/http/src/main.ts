@@ -54,18 +54,19 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
   // Make request body
   const requestBody: OptionsInit & {isStream?: true} = {
     isStream: true,
+    encoding: "binary",
     throwHttpErrors: true,
     headers: re.headers || {},
     method: re.method || "GET",
-    encoding: "binary",
-    http2: !(re.disableHTTP2 ?? false)
+    http2: !(re.disableHTTP2),
   };
 
   // Fix body to got
   if (!ignoreBody.includes(re.method||"GET") && re.body) {
     if (typeof re.body === "string"||Buffer.isBuffer(re.body)) requestBody.body = re.body;
-    else if (re.body instanceof stream.Readable || typeof (re.body as stream.Readable).pipe === "function") requestBody.body = re.body;
-    else requestBody.json = re.body;
+    else if (re.body instanceof stream.Writable) throw new Error("Invalid body");
+    else if (!(re.body instanceof stream.Readable)) requestBody.json = re.body;
+    else requestBody.body = re.body;
   }
 
   const request: reqStream = got.stream(URLFixed, requestBody) as any;
@@ -86,7 +87,7 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
     if (!head) continue;
     for (const keyName in head) if (typeof head[keyName] === "string" || Array.isArray(head[keyName])) request["headers"][keyName] = head[keyName];
   }
-  if (request.redirectUrls || (request.redirectUrls?.length ?? 0) <= 0) request.redirectUrls = [URLFixed]
+  if (request.redirectUrls || (request.redirectUrls?.length ?? 0) <= 0) request.redirectUrls = [URLFixed];
   return request;
 }
 
@@ -118,6 +119,8 @@ export async function bufferRequest(...args: Parameters<typeof streamRequest>) {
     ip: request.ip,
     url: request.redirectUrls?.at(-1),
     body: Buffer.concat(buffers),
+    statusCode: request.response?.statusCode,
+    statusMessage: request.response?.statusMessage,
   };
 }
 export async function bufferRequestBody(...args: Parameters<typeof bufferRequest>) {

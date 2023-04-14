@@ -14,6 +14,11 @@ const isCompress = {
 }
 
 export default decompress;
+export {
+  decompress as decompressStream,
+  compress as compressStream
+};
+
 /**
  * auto detect compress if is match to Xz/Lzma, gzip, bzip2 or deflate pipe and decompress else echo Buffer
  */

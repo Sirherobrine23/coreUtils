@@ -1,6 +1,6 @@
 import { v2, Utils } from "../src/index.js";
 process.on("unhandledRejection", err => console.error("Error:", err));
-const registry = new v2("ghcr.io/sirherobrine23/nodeaptexample:latest");
+const registry = new v2("ghcr.io/sirherobrine23/nodejs_example:latest");
 const tags = await registry.getTags();
 const manifest = await registry.getManifets(tags.at(-1))
 const manifestManeger = new Utils.Manifest(manifest, registry);

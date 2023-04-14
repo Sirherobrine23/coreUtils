@@ -3,7 +3,7 @@ export * as http from "@sirherobrine23/http";
 export * as Extends from "@sirherobrine23/extends";
 export * as Debian from "@sirherobrine23/debian";
 export * as Cloud from "@sirherobrine23/cloud";
-export * as Docker from "@sirherobrine23/docker-registry";
+export * as Docker from "@sirherobrine23/docker-registry/src/exp.js";
 
 export function parseM3U(fileData: string) {
   fileData = fileData.replace(/\r\n/gm, "\n").replace("#EXTM3U", "").trim();
