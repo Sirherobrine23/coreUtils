@@ -42,7 +42,7 @@ export class Auth {
   async setup(scp?: string) {
     if (this.token) return this;
     if (this.#auth?.username) if (!this.#auth.password) throw new TypeError("required Auth.auth.password to login in registry");
-    const headers = await http.jsonRequest(`http://${this.#image.registry}/v2/`).then(d => console.log(d.headers)).catch(async (err: http.httpCoreError) => err.headers);
+    const headers = await http.jsonRequest(`http://${this.#image.registry}/v2/`).then(d => d.headers).catch(async (err: http.httpCoreError) => err.headers);
     const { owner, repo } = this.#image;
     let auth: string = (headers["www-authenticate"] as any);
     if (typeof auth === "string" && (auth = auth.trim()).length > 0) {
@@ -63,25 +63,28 @@ export class Auth {
       },
     }
 
-    const { body: { token, access_token, expires_in, issued_at } } = await http.jsonRequest(this.#image.realm ?? `http://${this.#image.registry}/token`, options).catch((err: http.httpCoreError) => {
-      let d: any;
-      console.log(err);
-      if (err.body?.details) throw new Error(err.body.details);
-      else if (err.body?.errors) if (d = err.body.errors.find(d => !!d.message)?.message) d = new Error(d);
-      throw d ?? err;
-    });
-    this.token = token;
-    this.access_token = access_token;
-    this.expires_in = expires_in;
-    this.issued_at = issued_at;
-    if (typeof expires_in === "number" && expires_in >= 1) {
-      setTimeout(() => {
-        Object.defineProperty(this, "token", {
-          configurable: false,
-          writable: false,
-          value: new TypeError("Token exired"),
-        });
-      }, expires_in);
+    try {
+      const { body: { token, access_token, expires_in, issued_at } } = await http.jsonRequest(this.#image.realm ?? `http://${this.#image.registry}/token`, options).catch((err: http.httpCoreError) => {
+        let d: any;
+        if (err.body?.details) throw new Error(err.body.details);
+        else if (err.body?.errors) if (d = err.body.errors.find(d => !!d.message)?.message) d = new Error(d);
+        throw d ?? err;
+      });
+      this.token = token;
+      this.access_token = access_token;
+      this.expires_in = expires_in;
+      this.issued_at = issued_at;
+      if (typeof expires_in === "number" && expires_in >= 1) {
+        setTimeout(() => {
+          Object.defineProperty(this, "token", {
+            configurable: false,
+            writable: false,
+            value: new TypeError("Token exired"),
+          });
+        }, expires_in);
+      }
+    } catch (err) {
+      if (err.httpCode !== 404) throw err;
     }
 
     return this;

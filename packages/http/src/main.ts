@@ -1,6 +1,7 @@
 import gotMain, { Method, Headers, OptionsInit, Request, HTTPError } from "got";
 import { JSDOM } from "jsdom";
 import stream from "node:stream";
+export {HTTPError};
 
 const ignoreBody: Method[] = ["GET", "get"];
 const got = gotMain.extend({
@@ -26,21 +27,16 @@ export class httpCoreError {
   message: string;
   httpCode?: number;
   url?: string;
+  headers: Headers;
   rawBody: string;
   body: any;
-  headers: {[k: string]: string|string[]};
 }
 
 export interface reqStream extends Request {
   headers: Headers
 };
 
-/**
- * Create reqest same to fetch but return stream response
- *
- * @returns stream.Readable with headers
- */
-export async function streamRequest(re: validURL|requestOptions, options?: Omit<requestOptions, "url">): Promise<reqStream> {
+export function streamRoot(re: validURL|requestOptions, options?: Omit<requestOptions, "url">) {
   if (!(typeof re === "string"||re instanceof URL||re?.url)) throw new TypeError("Invalid request URL");
   if (typeof re === "string"||re instanceof URL) re = { ...options, url: re };
   else re = { ...options, ...re };
@@ -69,7 +65,19 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
     else requestBody.body = re.body;
   }
 
-  const request: reqStream = got.stream(URLFixed, requestBody) as any;
+  const request = got.stream(URLFixed, requestBody).on("response", () => {
+    if (request.redirectUrls || (request.redirectUrls?.length ?? 0) <= 0) request.redirectUrls = [URLFixed];
+  });
+  return request;
+}
+
+/**
+ * Create reqest same to fetch but return stream response
+ *
+ * @returns stream.Readable with headers
+ */
+export async function streamRequest(re: validURL|requestOptions, options?: Omit<requestOptions, "url">): Promise<reqStream> {
+  const request: reqStream = streamRoot(re, options) as any;
   (await new Promise<void>((done, reject) => request.on("error", (err: HTTPError) => {
     const errorC = new httpCoreError();
     errorC.httpCode = err.response?.statusCode;
@@ -79,6 +87,7 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
     errorC.rawBody = err.response?.body as any;
     try {
       errorC.body = JSON.parse(String(errorC.rawBody));
+      delete errorC.rawBody;
     } catch {}
     reject(errorC);
   }).on("response", done)));
@@ -87,7 +96,6 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
     if (!head) continue;
     for (const keyName in head) if (typeof head[keyName] === "string" || Array.isArray(head[keyName])) request["headers"][keyName] = head[keyName];
   }
-  if (request.redirectUrls || (request.redirectUrls?.length ?? 0) <= 0) request.redirectUrls = [URLFixed];
   return request;
 }
 

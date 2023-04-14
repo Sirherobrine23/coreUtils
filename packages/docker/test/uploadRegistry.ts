@@ -1,15 +1,12 @@
+import { createReadStream } from "fs";
 import { createRandomFile } from "@sirherobrine23/extends";
 import { finished } from "stream/promises";
-import registry from "../src/index.js";
 import { tmpdir } from "os";
-import path from "path";
-import { createReadStream } from "fs";
 import { rm } from "fs/promises";
-import { github_secret } from "@sirherobrine23/http/src/github.js";
-const main = new registry.v2("ghcr.io/sirherobrine23/nodejs_example:latest", {
-  username: "sirherobrine23",
-  password: github_secret as string
-});
+import registry from "../src/index.js";
+import path from "path";
+
+const main = new registry.v2("localhost:5000/sirherobrine23/nodejs_example:latest");
 console.log("Creating root");
 const create = await main.createImage();
 
@@ -26,13 +23,7 @@ for (let i = 0; i < 1; i++) {
 }
 
 console.log("uploading");
-try {
-  console.log(await create.upload("latest"))
-} catch (err) {
-  console.dir(err, {
-    colors: true,
-    depth: null,
-  });
-} finally {
-  await create.deleteTmp();
-}
+console.log(await create.publish({
+  os: "linux",
+  architecture: "amd64"
+}, "linux_amd64"))

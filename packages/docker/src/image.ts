@@ -46,6 +46,7 @@ export class parseImage {
       this.tag = this.repo.slice(tagIndex+1);
       this.repo = this.repo.slice(0, tagIndex);
     }
+    this.owner||= "";
     Object.defineProperty(this, "owner", {writable: false, value: this.owner});
     Object.defineProperty(this, "repo", {writable: false, value: this.repo});
   }
