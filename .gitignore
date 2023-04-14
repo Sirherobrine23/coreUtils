@@ -1,6 +1,7 @@
 # Ingore node folders
 node_modules/
 *.tgz
+/*-lock*
 
 # test files
 examples/souces/
