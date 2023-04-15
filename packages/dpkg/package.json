@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/dpkg",
-  "version": "3.6.0",
+  "version": "3.6.1",
   "description": "Create and Parse debian packages files directly from Nodejs",
   "type": "module",
   "main": "src/index.js",
@@ -29,10 +29,10 @@
     "postpack": "tsc --build --clean"
   },
   "dependencies": {
-    "@sirherobrine23/ar": "3.6.0",
-    "@sirherobrine23/decompress": "3.6.0",
-    "@sirherobrine23/extends": "3.6.0",
-    "@sirherobrine23/http": "3.6.0",
+    "@sirherobrine23/ar": "3.6.1",
+    "@sirherobrine23/decompress": "3.6.1",
+    "@sirherobrine23/extends": "3.6.1",
+    "@sirherobrine23/http": "3.6.1",
     "openpgp": "^5.7.0",
     "tar-stream": "^3.0.0"
   },
