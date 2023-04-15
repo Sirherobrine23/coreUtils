@@ -1,4 +1,4 @@
-import { Stats, createWriteStream } from "node:fs";
+import { Stats, createReadStream, createWriteStream } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { finished } from "node:stream/promises";
 import stream from "node:stream";
@@ -160,4 +160,14 @@ export async function createRandomFile(filePath: string, fileSize: number) {
   })).pipe(str);
   await finished(str);
   return fs.lstat(filePath);
+}
+
+export async function readFile(filePath: string, start: number, end: number) {
+  return new Promise<Buffer>((done, reject) => {
+    let buf: Buffer[] = [];
+    createReadStream(filePath, { start, end }).on("error", reject).on("data", (data: Buffer) => buf.push(data)).on("close", () => {
+      done(Buffer.concat(buf));
+      buf = null;
+    });
+  });
 }

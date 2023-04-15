@@ -11,46 +11,40 @@ import path from "node:path";
 /** Debian packages, get from `dpkg-architecture --list -L | grep 'musl-linux-' | sed 's|musl-linux-||g' | xargs`, version 1.21.1, Ubuntu */
 export type debianArch = "all"|"armhf"|"i386"|"ia64"|"alpha"|"amd64"|"arc"|"armeb"|"arm"|"arm64"|"avr32"|"hppa"|"m32r"|"m68k"|"mips"|"mipsel"|"mipsr6"|"mipsr6el"|"mips64"|"mips64el"|"mips64r6"|"mips64r6el"|"nios2"|"or1k"|"powerpc"|"powerpcel"|"ppc64"|"ppc64el"|"riscv64"|"s390"|"s390x"|"sh3"|"sh3eb"|"sh4"|"sh4eb"|"sparc"|"sparc64"|"tilegx";
 
+export type Maintainer = {
+  Name: string;
+  Email?: string;
+};
+
 export interface debianControl {
   Package: string,
   Architecture: debianArch,
   Version: string,
-  Priority: string,
-  Maintainer?: string,
+  Maintainer: Maintainer,
+  Description: string,
+  Priority?: string,
   Section?: string,
   Origin?: string,
-  "Original-Maintainer"?: string,
+  "Original-Maintainer"?: Maintainer,
   "Installed-Size"?: number,
   Bugs?: string,
   Depends?: string[],
   "Pre-Depends"?: string[],
   Tags?: string[],
   Suggests?: string,
-  Filename?: string,
   Size?: number,
   MD5sum?: string,
   SHA512?: string,
   SHA256?: string,
   SHA1?: string,
   Homepage?: string,
-  Description?: string,
   Task?: string,
+  Filename?: string,
 };
-
-const splitKeys = [
-  "Tag",
-  "Depends",
-  "Pre-Depends",
-  "Recommends",
-  "Replaces",
-  "Suggests",
-  "Breaks",
-  "Provides",
-];
 
 const archTest = ["all", "armhf", "i386", "ia64", "alpha", "amd64", "arc", "armeb", "arm", "arm64", "avr32", "hppa", "m32r", "m68k", "mips", "mipsel", "mipsr6", "mipsr6el", "mips64", "mips64el", "mips64r6", "mips64r6el", "nios2", "or1k", "powerpc", "powerpcel", "ppc64", "ppc64el", "riscv64", "s390", "s390x", "sh3", "sh3eb", "sh4", "sh4eb", "sparc", "sparc64", "tilegx"];
 
-export function parseControl<T = debianControl>(controlString: string|Buffer): T {
+export function parseControl<T extends debianControl = debianControl>(controlString: string|Buffer): T {
   if (Buffer.isBuffer(controlString)) controlString = controlString.toString("utf8");
   let lineSplit = controlString.trim().split("\n");
   for (let i = 0; i < lineSplit.length; i++) {
@@ -71,50 +65,72 @@ export function parseControl<T = debianControl>(controlString: string|Buffer): T
       }
     }
   }
-  const reduced = lineSplit.reduce((acc, line) => {
+  const reduced = lineSplit.reduce<T>((acc, line) => {
     const indexOf = line.indexOf(":");
-    let key: string;
-    acc[(key = line.slice(0, indexOf).trim())] = line.slice(indexOf+1).trim();
-    if ((["Size", "Installed-Size"]).includes(key)) acc[key] = Number(acc[key]);
-    else if (splitKeys.includes(key)) acc[key] = acc[key].split(",").map(str => str.trim());
+    let key: keyof debianControl;
+    acc[(key = line.slice(0, indexOf).trim() as any)] = line.slice(indexOf+1).trim();
+    if (!acc[key]) {
+      delete acc[key];
+      return acc;
+    }
+    if (key === "Size" || key === "Installed-Size") acc[key] = Number(acc[key]);
     else if (key === "Description") {
       const keysLe: string[] = acc[key].split("\n");
       let Space = /^(\s+)/;
       const spaceSkip = Array.from(new Set(keysLe.map(key => !(Space.test(key)) ? -1 : Space.exec(key).at(0).length).filter(a => a > 0).sort((a, b) => a - b))).at(0) ?? 1;
-      acc[key] = keysLe.map((line, index) => line.trim() === "." ? "" : (index > 0 ? line.slice(spaceSkip) : line.trim())).join("\n");
+      acc[key] = keysLe.map((line, index) => line.trim() === "." ? "" : (index > 0 ? line.slice(spaceSkip).trimEnd() : line.trim())).join("\n");
+    } else if (key === "Maintainer") {
+      const line = acc[key] as any as string;
+      const emailIndex_1 = line.indexOf("<"), emailIndex_2 = line.indexOf(">");
+      if (emailIndex_1 > 0 && (emailIndex_1 < emailIndex_2)) {
+        const Email = line.slice(emailIndex_1+1, emailIndex_2);
+        if (Email.length <= 2) throw new Error("Invalid email!");
+        acc[key] = {
+          Name: line.slice(0, emailIndex_1).trim(),
+          Email
+        };
+      } else acc[key] = {Name: line.trim()};
     }
     return acc;
   }, {} as any);
-  if (!(reduced.Package && reduced.Architecture && reduced.Version)) throw new Error("Control file is invalid");
+  if (!(reduced.Package && reduced.Architecture && reduced.Version && reduced.Maintainer && reduced.Description)) throw new Error("Control file is invalid");
   if (!(archTest.includes(reduced.Architecture))) throw new Error("Invalid package architecture!");
   return reduced;
+}
+
+function keys<T>(obj: T): (keyof T)[] {
+  return Object.keys(obj) as any;
 }
 
 export function createControl(controlObject: debianControl) {
   if (!(controlObject.Package && controlObject.Architecture && controlObject.Version)) throw new Error("Control is invalid");
   let controlFile: string[] = [];
-  for (const keyName in controlObject) {
+  const desc = controlObject.Description;
+  delete controlObject.Description;
+  controlObject.Description = desc;
+  for (const keyName of keys(controlObject)) {
+    let keyString = keyName + ": ";
     let data = controlObject[keyName];
-    // Ignore undefined and null values
     if (data === undefined||data === null||data === "") continue;
     if (keyName === "Description") {
       if (typeof data !== "string") throw new TypeError("Description must be a string");
       else {
-        data = data.split("\n").map((line, index) => {
+        controlFile.push(keyString+(data.split("\n").map((line, index) => {
           line = line.trim();
-          if (index === 0) return line;
+          if (index === 0) return line.trim();
           if (line.length < 1 || line === ".") return  ` .`;
-          return ` ${line}`;
-        }).join("\n");
+          return ` ${line.trimEnd()}`;
+        }).join("\n").trim()));
       }
+    } else if (keyName === "Maintainer"||keyName === "Original-Maintainer") {
+      const { Name, Email } = controlObject[keyName];
+      controlFile.push(keyString+`${Name} <${Email}>`);
+    } else {
+      if (typeof data === "boolean") keyString += data ? "yes" : "no";
+      else if (Array.isArray(data)) keyString += data.join(", ");
+      else keyString += String(data);
+      controlFile.push(keyString);
     }
-
-
-    let keyString = keyName + ": ";
-    if (typeof data === "boolean") keyString += data ? "yes" : "no";
-    else if (Array.isArray(data)) keyString += data.join(", ");
-    else keyString += String(data);
-    controlFile.push(keyString);
   }
 
   // Add break line to end
@@ -167,9 +183,29 @@ export interface packageConfig {
      */
     data?: Exclude<compressAvaible, "deflate">;
     /**
-     * @deprecated Control cause error in ar concat **DONT USE**
+     * compress control file to the smallest file possible
      */
     control?: Exclude<compressAvaible, |"deflate">;
+  },
+
+  /**
+   * Scripts or binary files to run post or pre action
+   *
+   * If set file path load directly
+     @example {
+       "preinst": "#!/bin/bash\nset -ex\necho \"Ok Google\"",
+       "postinst": "/var/lib/example/removeMicrosoft.sh"
+     }
+   */
+  scripts?: {
+    /** Run script before install packages */
+    preinst?: string;
+    /** Run script before remove package */
+    prerm?: string;
+    /** After install package */
+    postinst?: string;
+    /** After package removed */
+    postrm?: string;
   }
 }
 
@@ -184,9 +220,8 @@ export interface packageConfig {
  * @returns .deb file stream
  */
 export function createPackage(packageInfo: packageConfig) {
-  const com = (packageInfo.compress || {data: "gzip", control: "passThrough"});
-  if (!(com.control === undefined || com.control === "passThrough")) {com.control = "passThrough"; console.warn("Disable control.tar compress");}
-  const controlFilename = "control.tar",
+  const com = (packageInfo.compress || {data: "gzip", control: "gzip"});
+  const controlFilename = "control.tar"+(com.control === "xz" ? ".xz" : com.control === "gzip" ? ".gz" : ""),
   dataFilename = "data.tar"+(com.data === "xz" ? ".xz" : com.data === "gzip" ? ".gz" : "");
 
   // return stream
@@ -198,9 +233,24 @@ export function createPackage(packageInfo: packageConfig) {
     await stream_promise.finished(this.entry("debian-binary", 4).end("2.0\n"));
 
     // control file
-    const controlData = createControl(packageInfo.control);
-    const con = tarStream.pack(), conSave = con.pipe(createWriteStream(path.join(filesStorage, controlFilename)));
-    con.entry({name: "./control"}, controlData, () => con.finalize());
+    const controlTar = tarStream.pack(), conSave = controlTar.pipe(compress(com.control || "passThrough")).pipe(createWriteStream(path.join(filesStorage, controlFilename)));
+
+    // Control file
+    const controlData = createControl(packageInfo.control).concat("\n");
+    await stream_promise.finished(controlTar.entry({name: "./control", type: "file", size: controlData.length}).end(controlData));
+
+    // Scripts
+    if (packageInfo.scripts) {
+      for (const scr of keys(packageInfo.scripts)) {
+        const data = packageInfo.scripts[scr];
+        if (!data.includes("\n") && path.isAbsolute(path.resolve(process.cwd(), data)) && await extendsFS.exists(path.resolve(process.cwd(), data))) {
+          const stats = await fs.lstat(path.resolve(process.cwd(), data));
+          await stream_promise.finished(createReadStream(path.resolve(process.cwd(), data)).pipe(controlTar.entry({name: "./"+scr, size: stats.size, type: "file"})));
+        } else await stream_promise.finished(controlTar.entry({name: scr, type: "file", size: data.length}).end(data));
+      }
+    }
+
+    controlTar.finalize();
     await stream_promise.finished(conSave).then(() => this.addLocalFile(path.join(filesStorage, controlFilename))).then(() => fs.rm(path.join(filesStorage, controlFilename), {force: true}));
 
     // Data tarball
@@ -210,7 +260,7 @@ export function createPackage(packageInfo: packageConfig) {
     for (const file of filesFolder) {
       if (file.path.startsWith("DEBIAN")||file.path.startsWith("debian")||!(file.type === "file"||file.type === "directory")) continue;
       const entry = data.entry({
-        name: path.posix.resolve(path.posix.sep, file.path.split(path.sep).join(path.posix.sep)),
+        name: path.posix.join(".", path.posix.resolve(path.posix.sep, file.path.split(path.sep).join(path.posix.sep))),
         type: file.type,
         size: file.size
       });

@@ -1,15 +1,26 @@
 {
-  "name": "@sirherobrine23/debian",
+  "name": "@sirherobrine23/dpkg",
   "version": "3.6.0",
-  "description": "",
+  "description": "Create and Parse debian packages files directly from Nodejs",
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
+  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
+  "license": "GPL-2.0",
+  "homepage": "https://github.com/Sirherobrine23/coreUtils/tree/main/packages/debian#readme",
+  "keywords": [
+    "apt",
+    "dpkg",
+    "debian",
+    "multi-platform",
+    "windows",
+    "linux",
+    "macOS"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
   },
-  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
   "bugs": {
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
   },
@@ -17,9 +28,6 @@
     "prepack": "tsc --build --clean && tsc --build",
     "postpack": "tsc --build --clean"
   },
-  "keywords": [],
-  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
-  "license": "GPL-2.0",
   "dependencies": {
     "@sirherobrine23/ar": "3.6.0",
     "@sirherobrine23/decompress": "3.6.0",

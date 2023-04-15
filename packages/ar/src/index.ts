@@ -1,9 +1,13 @@
+export * as localFile from "./local.js";
+export * as local from "./local.js";
 import oldFs, { promises as fs } from "node:fs";
 import { extendsFS } from "@sirherobrine23/extends";
 import { finished } from "node:stream/promises";
 import { format } from "node:util";
 import stream from "node:stream";
 import path from "node:path";
+import { createHead } from "./local.js";
+export {createHead};
 
 export type arHeader = {
   name: string,
@@ -159,19 +163,6 @@ export function parse(): arParse {
   });
 }
 
-export function createHead(filename: string, info: {mtime?: Date|string, size: number, mode?: string}) {
-  if (!info.mtime) info.mtime = new Date();
-  const controlHead = Buffer.alloc(60, 0x20);
-  controlHead.write(path.basename(filename), 0, 16);
-  controlHead.write(!info.mtime ? "0" : (typeof info.mtime === "string" ? info.mtime : (info.mtime.getTime()/1000).toFixed()), 16, 12);
-  controlHead.write("0", 28, 6);                // uid
-  controlHead.write("0", 34, 6);                // gid
-  controlHead.write(info.mode ?? "644", 40, 6); // mode
-  controlHead.write(String(info.size), 48, 10);
-  controlHead.write("`\n", 58, 2);
-  return controlHead;
-}
-
 export class arStream extends stream.Readable {
   constructor(onRedable?: (this: arStream) => void) {
     super({autoDestroy: true, read(){}});
@@ -197,6 +188,7 @@ export class arStream extends stream.Readable {
       },
       final: (callback) => {
         this.#lockWrite = false;
+        if (size & 1) this.push("\n");
         callback();
       },
       destroy: (error, callback) => {

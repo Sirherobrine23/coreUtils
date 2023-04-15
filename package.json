@@ -18,7 +18,7 @@
     "packages/extends",
     "packages/http",
     "packages/cloud",
-    "packages/debian",
+    "packages/dpkg",
     "packages/docker",
     "packages/core"
   ],

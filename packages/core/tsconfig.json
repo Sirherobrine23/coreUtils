@@ -8,7 +8,7 @@
     {"path": "../ar"},
     {"path": "../cloud"},
     {"path": "../extends"},
-    {"path": "../debian"},
+    {"path": "../dpkg"},
     {"path": "../docker"},
   ]
 }

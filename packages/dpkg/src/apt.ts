@@ -1,4 +1,4 @@
-import { parseControl, debianControl } from "./deb.js";
+import { parseControl, debianControl } from "./dpkg.js";
 import { finished } from "stream/promises";
 import EventEmitter from "events";
 import decompress from "@sirherobrine23/decompress";
