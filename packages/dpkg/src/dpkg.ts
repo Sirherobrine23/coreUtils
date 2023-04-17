@@ -1,9 +1,9 @@
-import decompress, { compress, compressAvaible } from "@sirherobrine23/decompress";
-import { createArStream, parseArStream } from "@sirherobrine23/ar";
+import decompress, { compress, compressAvaible, decompressStream } from "@sirherobrine23/decompress";
+import { arParseAbstract, createArStream, parseArStream } from "@sirherobrine23/ar";
 import { createReadStream, createWriteStream, promises as fs } from "node:fs";
 import { extendsCrypto, extendsFS } from "@sirherobrine23/extends";
 import { tmpdir } from "node:os";
-import stream_promise from "node:stream/promises";
+import stream_promise, { finished } from "node:stream/promises";
 import tarStream from "tar-stream";
 import stream from "node:stream";
 import path from "node:path";
@@ -137,43 +137,6 @@ export function createControl(controlObject: debianControl) {
   return controlFile.join("\n");
 }
 
-export async function parsePackage(debStream: stream.Readable, lowPackge: boolean = false) {
-  const arStr = debStream.pipe(parseArStream());
-  const hashPromise = extendsCrypto.createHashAsync(debStream);
-  return new Promise<debianControl>((done, reject) => arStr.on("entry", (entry, fileStream) => {
-    if (!(entry.name.startsWith("control.tar"))) return null;
-    fileStream.pipe(decompress()).pipe(tarStream.extract()).on("error", reject).on("entry", async (entry, str, next) => {
-      const controlArray: Buffer[] = [];
-      if (path.basename(entry.name) === "control") {
-        await stream_promise.finished(str.on("data", data => controlArray.push(data)));
-        return done(parseControl(Buffer.concat(controlArray)));
-      }
-      return next();
-    });
-  })).then(async control => {
-    if (lowPackge) return control;
-    const { byteLength, hash } = await hashPromise;
-    control["Size"] = byteLength;
-    control.SHA512 = hash.sha512;
-    control.SHA256 = hash.sha256;
-    control.SHA1 = hash.sha1;
-    control.MD5sum = hash.md5;
-    return control;
-  });
-}
-
-/**
- * Get tar data end auto descompress
- *
- * @param fileStream - Package file stream
- * @returns
- */
-export async function getPackageData(fileStream: stream.Readable) {
-  const arParse = fileStream.pipe(parseArStream());
-  const dataTar = await new Promise<stream.Readable>((done, rej) => arParse.once("close", () => rej(new Error("There is no data.tar or it is not a debian package"))).on("entry", (str, stream) => path.basename(str.name).startsWith("data.tar") ? done(stream) : null));
-  return dataTar.pipe(decompress());
-}
-
 export interface packageConfig {
   dataFolder: string;
   control: debianControl;
@@ -230,7 +193,7 @@ export function createPackage(packageInfo: packageConfig) {
     else if (await extendsFS.isFile(packageInfo.dataFolder)) throw new TypeError("dataFolder is file");
     const filesStorage = await fs.mkdtemp(path.join(tmpdir(), "debianPack_"));
     // Write debian-binary
-    await stream_promise.finished(ar.entry("debian-binary", {size: 4}).end("2.0\n"));
+    ar.addEntry("debian-binary", {size: 4}, "2.0\n", "utf8");
 
     // control file
     const controlTar = tarStream.pack(), conSave = controlTar.pipe(compress(com.control || "passThrough")).pipe(createWriteStream(path.join(filesStorage, controlFilename)));
@@ -271,6 +234,108 @@ export function createPackage(packageInfo: packageConfig) {
     data.finalize();
     await stream_promise.finished(dataSave).then(() => ar.addLocalFile(path.join(filesStorage, dataFilename))).then(() => fs.rm(path.join(filesStorage, dataFilename), {force: true}));
     await fs.rm(filesStorage, {recursive: true, force: true});
-    callback();
+    return callback();
   });
+}
+
+/**
+ * Parse debian package promised function
+ * @param debStream - Package stream
+ * @returns
+ */
+export async function parsePackage(debStream: stream.Readable) {
+  const hashPromise = extendsCrypto.createHashAsync(debStream);
+  const files = new Set<tarStream.Headers>();
+  let controlFile: debianControl;
+  await finished(debStream.pipe(parsePackageStream()).on("control", control => controlFile = control).on("dataFile", source => files.add(source)));
+  const { byteLength, hash } = await hashPromise;
+
+  // Set extra info
+  controlFile.Size = byteLength;
+  controlFile.MD5sum = hash.md5;
+  controlFile.SHA1 = hash.sha1;
+  controlFile.SHA256 = hash.sha256;
+  controlFile.SHA512 = hash.sha512;
+
+  return {
+    controlFile,
+    files: Array.from(files.values()),
+  };
+}
+
+export interface parseStream extends arParseAbstract {
+  on(event: "close", listener: () => void): this;
+  on(event: "drain", listener: () => void): this;
+  on(event: "error", listener: (err: Error) => void): this;
+  on(event: "finish", listener: () => void): this;
+  on(event: "pipe", listener: (src: stream.Readable) => void): this;
+  on(event: "unpipe", listener: (src: stream.Readable) => void): this;
+  on(event: "dataFile", listener: (fileInfo: tarStream.Headers, fileStream: stream.Readable) => void): this;
+  on(event: "control", listener: (packageControl: debianControl) => void): this;
+  on(event: string | symbol, listener: (...args: any[]) => void): this;
+
+  once(event: "close", listener: () => void): this;
+  once(event: "drain", listener: () => void): this;
+  once(event: "error", listener: (err: Error) => void): this;
+  once(event: "finish", listener: () => void): this;
+  once(event: "pipe", listener: (src: stream.Readable) => void): this;
+  once(event: "unpipe", listener: (src: stream.Readable) => void): this;
+  once(event: "dataFile", listener: (fileInfo: tarStream.Headers, fileStream: stream.Readable) => void): this;
+  once(event: "control", listener: (packageControl: debianControl) => void): this;
+  once(event: string | symbol, listener: (...args: any[]) => void): this;
+}
+
+export function parsePackageStream(): parseStream {
+  return new class parseStream extends arParseAbstract {
+    #isDebian = false;
+    #filesList = new Set<tarStream.Headers>();
+    getFiles() {
+      return Array.from(this.#filesList.values());
+    }
+
+    #controlFile: debianControl;
+    getControl() {
+      if (!this.#controlFile) throw new Error("Package not loaded!");
+      return this.#controlFile;
+    }
+
+    constructor() {
+      super(async (head, fileStream) => {
+        if (path.basename(head.name).startsWith("debian-binary")) this.#isDebian = true;
+        else if (!this.#isDebian) throw new Error("Cannot extract debian file, malformed debian package!");
+        else if (path.basename(head.name).startsWith("control.tar")) {
+          const controlTar = fileStream.pipe(decompressStream()).pipe(tarStream.extract());
+          controlTar.on("entry", async (entry, fileStr, next) => {
+            next();
+            if (path.basename(entry.name) === "control") {
+              const bufferConcat: Buffer[] = [];
+              await finished(fileStr.on("data", data => bufferConcat.push(data)));
+              this.emit("control", (this.#controlFile = parseControl(Buffer.concat(bufferConcat))));
+            } else if (path.basename(entry.name) === "md5sums") {
+
+            }
+          });
+          await finished(controlTar, {error: true});
+        } else if (path.basename(head.name).startsWith("data.tar")) {
+          await finished(fileStream.pipe(decompressStream()).pipe(tarStream.extract()).on("entry", (entry, str, next) => {
+            next();
+            this.emit("dataFile", entry, str);
+            this.#filesList.add(entry);
+          }), {error: true});
+        } else throw new Error("Invalid file");
+      });
+    }
+  }
+}
+
+/**
+ * Get tar data end auto descompress
+ *
+ * @param fileStream - Package file stream
+ * @returns
+ */
+export async function getPackageData(fileStream: stream.Readable) {
+  const arParse = fileStream.pipe(parseArStream());
+  const dataTar = await new Promise<stream.Readable>((done, rej) => arParse.once("close", () => rej(new Error("There is no data.tar or it is not a debian package"))).on("entry", (str, stream) => path.basename(str.name).startsWith("data.tar") ? done(stream) : null));
+  return dataTar.pipe(decompress());
 }

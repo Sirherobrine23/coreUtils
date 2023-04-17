@@ -25,4 +25,5 @@ const deb = dpkg.createPackage({
     preinst: "#!/bin/bash\nset -ex\necho OK"
   }
 });
+
 await finished(deb.pipe(createWriteStream(path.join(__dirname, "example.deb"))));

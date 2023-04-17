@@ -13,16 +13,13 @@ const isCompress = {
   xz: (buf: Buffer) => ((buf[0] === 0xFD) && (buf[1] === 0x37) && (buf[2] === 0x7A) && (buf[3] === 0x58) && (buf[4] === 0x5A)),
 }
 
-export default decompress;
-export {
-  decompress as decompressStream,
-  compress as compressStream
-};
+export { decompressStream as decompress, compressStream as compress };
+export default decompressStream;
 
 /**
  * auto detect compress if is match to Xz/Lzma, gzip, bzip2 or deflate pipe and decompress else echo Buffer
  */
-export function decompress() {
+export function decompressStream() {
   return peek({newLine: false, maxBuffer: 16}, async (data, swap) => {
     if (isCompress.deflate(data)) return swap(null, zlib.createInflate());
     else if (isCompress.bzip2(data)) return swap(null, bzip2());
@@ -32,7 +29,7 @@ export function decompress() {
   });
 }
 
-export function compress(target: compressAvaible): stream.Transform {
+export function compressStream(target: compressAvaible): stream.Transform {
   if (target === "deflate") return zlib.createDeflate();
   else if (target === "gzip") return zlib.createGzip();
   else if (target === "xz") return lzma.createCompressor();

@@ -14,11 +14,11 @@ for (let testCount = 0; testCount < 100; testCount++) {
   const r = randomInt(3, 100);
   for (let i = 0; i < r; i++) {
     const random = randomBytes(randomInt(100, 2000));
-    await finished((ar.entry("random"+i, {size: random.byteLength})).end(random));
+    await finished((ar.addEntry("random"+i, {size: random.byteLength})).end(random));
   }
-  ar.close();
+  ar.finalize();
   await finished(wr);
-  try {execFileSync("ar", ["t", path.resolve(__dirname, "example.ar")], {stdio: "ignore"}); sucess.push(ar.getEntrys())} catch {fail.push(ar.getEntrys())};
+  try {execFileSync("ar", ["t", path.resolve(__dirname, "example.ar")], {stdio: "ignore"}); sucess.push(ar.getFiles())} catch {fail.push(ar.getFiles())};
 }
 
-console.log("Success: %O, Fail: %O", sucess, fail.length);
+console.log("Success: %O, Fail: %O", sucess.length, fail.length);

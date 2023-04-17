@@ -1,4 +1,4 @@
-import oldFs, { promises as fs } from "node:fs";
+import oldFs, { createReadStream, promises as fs } from "node:fs";
 import { extendsFS } from "@sirherobrine23/extends";
 import { finished } from "node:stream/promises";
 import { format } from "node:util";
@@ -14,39 +14,154 @@ export type arHeader = {
   size: number,
 };
 
-export type fileInfo = {size: number, mtime?: Date|string, mode?: string, owner?: number, group?: number}
+export type fileInfo = {size: number, mtime?: Date, mode?: number, owner?: number, group?: number};
 export function createHead(filename: string, info: fileInfo) {
-  info.mtime ||= new Date();
-  info.mode ||= "644";
-  info.owner ||= 0;
-  if (info.owner < 0) info.owner = 0;
-  info.group ||= 0;
-  if (info.group < 0) info.group = 0;
+  if (isNaN(info.size) && !isFinite(info.size) && info.size <= 0) throw new Error("Invalid file size!");
+  if (!(info.mtime instanceof Date && !isNaN(info.mtime.getTime()))) info.mtime = new Date();
+  if (!(info.mode > 1 && !isNaN(info.mode) && isFinite(info.mode))) info.mode = 644;
+  if (!(info.owner > 0 && !isNaN(info.owner) && isFinite(info.owner))) info.owner = 0;
+  if (!(info.group > 0 && !isNaN(info.group) && isFinite(info.group))) info.group = 0;
+
+  // Init head
   const controlHead = Buffer.alloc(60, 0x20);
 
   // Filename
   controlHead.write(path.basename(filename), 0, 16, "ascii");
 
   // Timestamp
-  if (info.mtime instanceof Date) controlHead.write((info.mtime.getTime()/1000).toFixed(), 16, 12); else controlHead.write(info.mtime, 16, 12);
+  controlHead.write((info.mtime.getTime()/1000).toFixed(), 16, 12);
 
   // Owner ID
-  controlHead.write(info.owner.toString(), 28, 6);
+  controlHead.write(Math.round(info.owner).toString(), 28, 6);
 
   // Group ID
-  controlHead.write(info.group.toString(), 34, 6);
+  controlHead.write(Math.round(info.group).toString(), 34, 6);
 
   // File mode
-  controlHead.write(info.mode, 40, 8);
+  controlHead.write(Math.round(info.mode).toString(), 40, 8);
 
   // File size
-  controlHead.write(info.size.toString(), 48, 10);
+  controlHead.write(Math.round(info.size).toString(), 48, 10);
 
   // ending
   controlHead[58] = 0x60; controlHead[59] = 0x0A;
   return controlHead;
 }
 
+export class arParseAbstract extends stream.Writable {
+  #fileStreamSize: number;
+  #fileStream?: stream.Readable;
+  #oldBuffer?: Buffer;
+  #initialHead = true;
+  constructor(entry: (header: arHeader, stream: stream.Readable) => void) {
+    super({
+      defaultEncoding: "binary",
+      objectMode: false,
+      autoDestroy: true,
+      decodeStrings: true,
+      emitClose: true,
+      highWaterMark: 1024,
+      final: (callback) => {
+        if (this.#fileStream && this.#oldBuffer) {
+          if (!this.#fileStream.destroyed||this.#fileStream.readable) {
+            this.#fileStream.push(this.#oldBuffer.subarray(0, this.#fileStreamSize));
+            this.#fileStream.push(null);
+          }
+        }
+        this.#oldBuffer = undefined;
+        callback();
+      },
+      destroy: (error, callback) => {
+        if (this.#fileStream && error) this.#fileStream.destroy(error);
+        callback(error);
+      },
+      write: (remoteChunk, encoding, callback) => {
+        let chunk = Buffer.isBuffer(remoteChunk) ? remoteChunk : Buffer.from(remoteChunk, encoding);
+        if (this.#oldBuffer) chunk = Buffer.concat([this.#oldBuffer, chunk]);
+        this.#oldBuffer = undefined;
+        // file signature
+        if (this.#initialHead) {
+          // More buffer to maneger correctly
+          if (chunk.length < 70) {
+            this.#oldBuffer = chunk;
+            return callback();
+          }
+          const signature = chunk.subarray(0, 8).toString("ascii");
+          if (signature !== "!<arch>\n") return callback(new Error(format("Invalid ar file, recived: %O", signature)));
+          this.#initialHead = false;
+          chunk = chunk.subarray(8);
+        }
+
+        // if exists chunk and is not empty save to next request
+        if (chunk.length > 0) {
+          // if exist file stream and chunk is not empty
+          if (this.#fileStream) {
+            const fixedChunk = chunk.subarray(0, this.#fileStreamSize);
+            if (!this.#fileStream.destroyed||this.#fileStream.readable) this.#fileStream.push(fixedChunk);
+            this.#fileStreamSize -= fixedChunk.length;
+            chunk = chunk.subarray(fixedChunk.length);
+            if (this.#fileStreamSize <= 0) {
+              this.#fileStream.push(null);
+              this.#fileStream = undefined;
+            }
+            if (chunk.length <= 0) return callback();
+          }
+        }
+
+        // more buffer
+        if (chunk.length >= 60) {
+          for (let chunkByte = 0; chunkByte < chunk.length; chunkByte++) {
+            const lastByteHead = chunkByte;
+            const fistCharByte = lastByteHead-60;
+            if (fistCharByte < 0) continue;
+            const head = chunk.subarray(fistCharByte, lastByteHead);
+            const name = head.subarray(0, 16).toString("ascii").trim();
+            const time = new Date(parseInt(head.subarray(16, 28).toString("ascii").trim()) * 1000);
+            const owner = parseInt(head.subarray(28, 34).toString("ascii").trim());
+            const group = parseInt(head.subarray(34, 40).toString("ascii").trim());
+            const mode = parseInt(head.subarray(40, 48).toString("ascii").trim());
+            const size = parseInt(head.subarray(48, 58).toString("ascii").trim());
+
+            // One to error
+            if ((!name)||(time.toString() === "Invalid Date")||(isNaN(owner))||(isNaN(group))||(isNaN(mode))||(isNaN(size))) continue;
+            if (head.subarray(58, 60).toString("ascii") !== "`\n") continue;
+
+            if (fistCharByte >= 1) {
+              const chucked = chunk.subarray(0, fistCharByte);
+              if (this.#fileStream && chucked[0] !== 0x0A) {
+                this.#fileStream.push(chucked);
+                this.#fileStream.push(null);
+              }
+            }
+
+            // Cut post header from chunk
+            chunk = chunk.subarray(lastByteHead);
+            entry({name, time, owner, group, mode, size}, (this.#fileStream = new stream.Readable({read() {}})));
+            this.#fileStreamSize = size;
+
+            const fileSize = chunk.subarray(0, size);
+            chunk = chunk.subarray(fileSize.length);
+            if (!this.#fileStream.destroyed||this.#fileStream.readable) this.#fileStream.push(fileSize);
+            this.#fileStreamSize -= fileSize.length;
+
+            if (this.#fileStreamSize <= 0) {
+              if (!this.#fileStream.destroyed||this.#fileStream.readable) this.#fileStream.push(null);
+              this.#fileStream = undefined;
+              this.#fileStreamSize = -1;
+            }
+
+            // Restart loop to check if chunk has more headers
+            chunkByte = 0;
+          }
+        }
+
+        // Get more buffer data
+        if (chunk.length > 0) this.#oldBuffer = chunk;
+        return callback();
+      }
+    });
+  }
+}
 
 export declare interface arParse extends stream.Writable {
   on(event: "close", listener: () => void): this;
@@ -81,187 +196,119 @@ export declare interface arParse extends stream.Writable {
  *
  */
 export function parseArStream(): arParse {
-  let initialHead = true, oldBuffer: Buffer, fileStream: stream.Readable, fileStreamSize: number;
-  return new stream.Writable({
-    defaultEncoding: "binary",
-    objectMode: false,
-    autoDestroy: true,
-    decodeStrings: true,
-    emitClose: true,
-    highWaterMark: 1024,
-    final(callback) {
-      if (fileStream && oldBuffer) {
-        if (!fileStream.destroyed||fileStream.readable) {
-          fileStream.push(oldBuffer.subarray(0, fileStreamSize));
-          fileStream.push(null);
-        }
-      }
-      oldBuffer = undefined;
-      callback();
-    },
-    destroy(error, callback) {
-      if (fileStream) fileStream.destroy(error);
-      callback(error);
-    },
-    write(remoteChunk, encoding, callback) {
-      let chunk = Buffer.isBuffer(remoteChunk) ? remoteChunk : Buffer.from(remoteChunk, encoding);
-      if (oldBuffer) chunk = Buffer.concat([oldBuffer, chunk]);
-      oldBuffer = undefined;
-      // file signature
-      if (initialHead) {
-        // More buffer to maneger correctly
-        if (chunk.length < 70) {
-          oldBuffer = chunk;
-          return callback();
-        }
-        const signature = chunk.subarray(0, 8).toString("ascii");
-        if (signature !== "!<arch>\n") return callback(new Error(format("Invalid ar file, recived: %O", signature)));
-        initialHead = false;
-        chunk = chunk.subarray(8);
-      }
-
-      // if exists chunk and is not empty save to next request
-      if (chunk.length > 0) {
-        // if exist file stream and chunk is not empty
-        if (fileStream) {
-          const fixedChunk = chunk.subarray(0, fileStreamSize);
-          if (!fileStream.destroyed||fileStream.readable) fileStream.push(fixedChunk);
-          fileStreamSize -= fixedChunk.length;
-          chunk = chunk.subarray(fixedChunk.length);
-          if (fileStreamSize <= 0) {
-            fileStream.push(null);
-            fileStream = undefined;
-          }
-          if (chunk.length <= 0) return callback();
-        }
-      }
-
-      // more buffer
-      if (chunk.length >= 60) {
-        for (let chunkByte = 0; chunkByte < chunk.length; chunkByte++) {
-          const lastByteHead = chunkByte;
-          const fistCharByte = lastByteHead-60;
-          if (fistCharByte < 0) continue;
-          const head = chunk.subarray(fistCharByte, lastByteHead);
-          const name = head.subarray(0, 16).toString("ascii").trim();
-          const time = new Date(parseInt(head.subarray(16, 28).toString("ascii").trim()) * 1000);
-          const owner = parseInt(head.subarray(28, 34).toString("ascii").trim());
-          const group = parseInt(head.subarray(34, 40).toString("ascii").trim());
-          const mode = parseInt(head.subarray(40, 48).toString("ascii").trim());
-          const size = parseInt(head.subarray(48, 58).toString("ascii").trim());
-
-          // One to error
-          if ((!name)||(time.toString() === "Invalid Date")||(isNaN(owner))||(isNaN(group))||(isNaN(mode))||(isNaN(size))) continue;
-          if (head.subarray(58, 60).toString("ascii") !== "`\n") continue;
-
-          if (fistCharByte >= 1) {
-            const chucked = chunk.subarray(0, fistCharByte);
-            if (fileStream) {
-              fileStream.push(chucked);
-              fileStream.push(null);
-            }
-          }
-
-          // Cut post header from chunk
-          chunk = chunk.subarray(lastByteHead);
-
-          fileStream = new stream.Readable({read() {}});
-          this.emit("entry", {name, time, owner, group, mode, size}, fileStream);
-          fileStreamSize = size;
-
-          const fileSize = chunk.subarray(0, size);
-          chunk = chunk.subarray(fileSize.length);
-          if (!fileStream.destroyed||fileStream.readable) fileStream.push(fileSize);
-          fileStreamSize -= fileSize.length;
-
-          if (fileStreamSize <= 0) {
-            if (!fileStream.destroyed||fileStream.readable) fileStream.push(null);
-            fileStream = undefined;
-            fileStreamSize = undefined;
-          }
-
-          // Restart loop to check if chunk has more headers
-          chunkByte = 0;
-        }
-      }
-
-      // Get more buffer data
-      if (chunk.length > 0) oldBuffer = chunk;
-      return callback();
+  return new class arParse extends arParseAbstract {
+    constructor() {
+      super((head, str) => this.emit("entry", head, str));
     }
-  });
-}
-
-export interface arStream extends stream.Readable {
-  close(): void;
-  entry(...args: Parameters<typeof createHead>): stream.Writable;
-  addLocalFile(filePath: string, filename?: string): Promise<void>;
-  getEntrys(): {[fileName: string]: fileInfo};
+  };
 }
 
 /**
- * Create ar file and return file stream
- * 
- * @param onRedable - Callback with ar stream
+ *
+ * @param createdCallback - call before stream created
  * @returns
  */
-export function createArStream(onRedable?: (ar: arStream, callback: (err?: any) => void) => void) {
-  const entrys = new Map<string, fileInfo>();
-  let lockWrite = false;
-  return new (class arStream extends stream.Readable {
+export function createArStream(callback?: (ar: ReturnType<typeof createArStream>, callback?: (err?: any) => void) => void) {
+  const fileEntrys = new Map<string, fileInfo>();
+  let sendMagic = true;
+  return new class arStream extends stream.Readable {
     constructor() {
-      super({autoDestroy: true, read() {}})
-      this.push(Buffer.from([0x21, 0x3C, 0x61, 0x72, 0x63, 0x68, 0x3E, 0x0A]), "binary");
-      if (typeof onRedable === "function") Promise.resolve().then(() => onRedable(this, this.#callback)).catch(this.#callback);
+      super({read(){}, autoDestroy: true});
+      if (typeof callback === "function") {
+        if (callback.length === 1) {
+          Promise.resolve().then(() => callback(this)).then(() => this.finalize(), err => this.emit("error", err));
+        } else {
+          Promise.resolve().then(() => callback(this, (err) => {
+            if (err) this.emit("error", err);
+            this.finalize();
+          })).catch(err => this.emit("error", err));
+        }
+      }
     }
-    #callback(err?: any) {
-      lockWrite = true;
-      if (err) this.emit("error", err);
-      this.push(null);
-    };
-    close() {this.#callback();}
-    getEntrys() {
-      return Array.from(entrys.keys()).reduce<{[fileName: string]: fileInfo}>((acc, key) => {
-        acc[key] = entrys.get(key);
+
+    /**
+     * Get files added in ar file
+     * @returns Files registred on stream
+     */
+    getFiles() {
+      return Array.from(fileEntrys.keys()).reduce<{[fileName: string]: fileInfo}>((acc, fileName) => {
+        acc[fileName] = fileEntrys.get(fileName);
         return acc;
       }, {});
     }
-    entry(filename, info) {
-      if (entrys.has(filename)) throw new Error("File are exists in ar file!");
-      else if (lockWrite) throw new Error("Write locked");
-      lockWrite = true;
-      this.push(createHead(filename, info), "binary");
-      entrys.set(filename, {...info});
+
+    /**
+     * Close redable stream
+     */
+    finalize() {
+      this.push(null);
+    }
+
+    #locked = false;
+    /**
+     * Get writable stream to add file in ar file
+     *
+     * @param fileName - file name
+     * @param fileInfo - file info to set in head
+     * @returns
+     */
+    addEntry(fileName: string, fileInfo: fileInfo): stream.Writable;
+    /**
+     *
+     * @param fileName - file name
+     * @param fileInfo - file info to set in head
+     * @param data - File Buffer os string
+     * @param encoding - optional data encoding
+     */
+    addEntry(fileName: string, fileInfo: fileInfo, data: string|Buffer, encoding?: BufferEncoding): void;
+    addEntry(fileName: string, fileInfo: fileInfo, data?: string|Buffer, encoding?: BufferEncoding): void|stream.Writable {
+      if (fileEntrys.has(fileName)) throw new Error("File added in ar file");
+      else if (this.#locked) throw new Error("Fist end previus Writable stream!");
+      else if (this.closed) throw new Error("Stream closed not possible send new chuncks");
+      if (sendMagic) {
+        sendMagic = false;
+        // Send initial head
+        this.push(Buffer.from([0x21, 0x3C, 0x61, 0x72, 0x63, 0x68, 0x3E, 0x0A]), "binary");
+      }
+      const fileHead = createHead(fileName, fileInfo);
+      fileEntrys.set(fileName, {...fileInfo});
+      const self = this;
+      this.push(fileHead, "binary");
+      if (typeof data === "string"||data instanceof Buffer) {
+        this.push(data, encoding);
+        this.#locked = false;
+        return;
+      }
       return new stream.Writable({
         autoDestroy: true,
-        decodeStrings: false,
         emitClose: true,
-        write: (chunk, encoding, callback) => {
-          this.push(chunk, encoding);
+        write(chunk, encoding, callback) {
+          self.push(chunk, encoding);
           callback();
         },
-        final: (callback) => {
-          lockWrite = false;
-          if (entrys.get(filename).size & 1) this.push("\n");
-          callback();
-        },
-        destroy: (error, callback) => {
-          if (!!error) this.emit("error", error);
+        destroy(error, callback) {
+         self.#locked = false;
+         if (error) self.destroy(error);
+         if (fileEntrys.get(fileName).size & 1) self.push("\n", "utf8");
           callback(error);
-        },
+        }
       });
     }
-    async addLocalFile(filePath: string, filename = path.basename(filePath)) {
-      if (!(await extendsFS.isFile(filePath))) throw new Error("path is not file!");
-      const stats = await fs.stat(filePath);
-      await finished(oldFs.createReadStream(filePath).pipe(this.entry(filename, {
+
+    async addLocalFile(filePath: string) {
+      const stats = await fs.lstat(filePath);
+      if (stats.isDirectory()) throw new Error("Invalid file path, informed directory not file!");
+      await finished(createReadStream(filePath).pipe(this.addEntry(filePath, {
         size: stats.size,
+        mode: stats.mode,
         mtime: stats.mtime,
-        owner: stats.uid || 0,
-        group: stats.gid || 0
+        owner: stats.uid,
+        group: stats.gid
       })));
+
+      return stats;
     }
-  })();
+  }
 }
 
 /**
@@ -273,8 +320,8 @@ export function createArStream(onRedable?: (ar: arStream, callback: (err?: any) 
 export async function createFile(filePath: string) {
   await fs.writeFile(filePath, Buffer.from([0x21, 0x3C, 0x61, 0x72, 0x63, 0x68, 0x3E, 0x0A]), "binary");
   let lock = false;
-  const entrys = new Map<string, {mtime?: Date|string, size: number, mode?: string}>();
-  async function entry(filename: string, info: {mtime?: Date|string, size: number, mode?: string}) {
+  const entrys = new Map<string, fileInfo>();
+  async function entry(filename: string, info: fileInfo) {
     if (lock) throw new Error("Wait before entry end!");
     if (entrys.has((filename = path.basename(filename)))) throw new Error("File ared exists");
     entrys.set(filename, {...info});
@@ -313,7 +360,6 @@ export async function createFile(filePath: string) {
 export async function parseFile(filePath: string) {
   if (!((await extendsFS.readFile(filePath, 0, 8)).toString("ascii").startsWith("!<arch>\n"))) throw new Error("Invalid ar file, invalid magic head!");
   const heads: {head: arHeader, start: number, end: number}[] = [];
-
   let oldBuffer: Buffer, fileStreamSize: number = 0, offset = 8;
   await finished(oldFs.createReadStream(filePath, {start: 8}).pipe(new stream.Writable({
     write(chunk, _encoding, callback) {
