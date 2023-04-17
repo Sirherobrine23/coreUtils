@@ -135,7 +135,6 @@ export async function bufferRequestBody(...args: Parameters<typeof bufferRequest
   return (await bufferRequest(...args)).body;
 }
 
-export default jsonRequest;
 /**
  * fetch json response
  * @returns

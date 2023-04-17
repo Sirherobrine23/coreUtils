@@ -28,16 +28,13 @@ jobs:
       - name: Edit version
         run: npm run update_version -- ${{ github.event.release.tag_name }} --env_file="$GITHUB_ENV"
 
-      - name: Build package
-        run: npm run build
+      - name: Pack package
+        run: npm pack --workspaces
 
       - name: Publish package
         run: npm publish --workspaces --access public --tag ${{ github.event.release.prerelease && 'next' || 'latest' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Pack package
-        run: npm pack --workspaces
 
       - name: Upload package
         uses: actions/upload-artifact@v3

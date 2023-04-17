@@ -1,7 +1,7 @@
 {
   "name": "@sirherobrine23/http",
   "version": "3.6.1",
-  "description": "",
+  "description": "Core http module using got module",
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",

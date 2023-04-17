@@ -1,5 +1,5 @@
 import decompress, { compress, compressAvaible } from "@sirherobrine23/decompress";
-import Ar, { createStream } from "@sirherobrine23/ar";
+import { createArStream, parseArStream } from "@sirherobrine23/ar";
 import { createReadStream, createWriteStream, promises as fs } from "node:fs";
 import { extendsCrypto, extendsFS } from "@sirherobrine23/extends";
 import { tmpdir } from "node:os";
@@ -138,7 +138,7 @@ export function createControl(controlObject: debianControl) {
 }
 
 export async function parsePackage(debStream: stream.Readable, lowPackge: boolean = false) {
-  const arStr = debStream.pipe(Ar());
+  const arStr = debStream.pipe(parseArStream());
   const hashPromise = extendsCrypto.createHashAsync(debStream);
   return new Promise<debianControl>((done, reject) => arStr.on("entry", (entry, fileStream) => {
     if (!(entry.name.startsWith("control.tar"))) return null;
@@ -169,7 +169,7 @@ export async function parsePackage(debStream: stream.Readable, lowPackge: boolea
  * @returns
  */
 export async function getPackageData(fileStream: stream.Readable) {
-  const arParse = fileStream.pipe(Ar());
+  const arParse = fileStream.pipe(parseArStream());
   const dataTar = await new Promise<stream.Readable>((done, rej) => arParse.once("close", () => rej(new Error("There is no data.tar or it is not a debian package"))).on("entry", (str, stream) => path.basename(str.name).startsWith("data.tar") ? done(stream) : null));
   return dataTar.pipe(decompress());
 }
@@ -225,12 +225,12 @@ export function createPackage(packageInfo: packageConfig) {
   dataFilename = "data.tar"+(com.data === "xz" ? ".xz" : com.data === "gzip" ? ".gz" : "");
 
   // return stream
-  return createStream(async function pack() {
+  return createArStream(async function pack(ar, callback) {
     if (!(await extendsFS.exists(packageInfo?.dataFolder))) throw new TypeError("required dataFolder to create data.tar");
     else if (await extendsFS.isFile(packageInfo.dataFolder)) throw new TypeError("dataFolder is file");
     const filesStorage = await fs.mkdtemp(path.join(tmpdir(), "debianPack_"));
     // Write debian-binary
-    await stream_promise.finished(this.entry("debian-binary", 4).end("2.0\n"));
+    await stream_promise.finished(ar.entry("debian-binary", {size: 4}).end("2.0\n"));
 
     // control file
     const controlTar = tarStream.pack(), conSave = controlTar.pipe(compress(com.control || "passThrough")).pipe(createWriteStream(path.join(filesStorage, controlFilename)));
@@ -251,7 +251,7 @@ export function createPackage(packageInfo: packageConfig) {
     }
 
     controlTar.finalize();
-    await stream_promise.finished(conSave).then(() => this.addLocalFile(path.join(filesStorage, controlFilename))).then(() => fs.rm(path.join(filesStorage, controlFilename), {force: true}));
+    await stream_promise.finished(conSave).then(() => ar.addLocalFile(path.join(filesStorage, controlFilename))).then(() => fs.rm(path.join(filesStorage, controlFilename), {force: true}));
 
     // Data tarball
     const compressStr = compress(com.data || "passThrough");
@@ -269,7 +269,8 @@ export function createPackage(packageInfo: packageConfig) {
       await stream_promise.finished(entry);
     }
     data.finalize();
-    await stream_promise.finished(dataSave).then(() => this.addLocalFile(path.join(filesStorage, dataFilename))).then(() => fs.rm(path.join(filesStorage, dataFilename), {force: true}));
+    await stream_promise.finished(dataSave).then(() => ar.addLocalFile(path.join(filesStorage, dataFilename))).then(() => fs.rm(path.join(filesStorage, dataFilename), {force: true}));
     await fs.rm(filesStorage, {recursive: true, force: true});
+    callback();
   });
 }
