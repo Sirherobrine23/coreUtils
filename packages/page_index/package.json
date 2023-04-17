@@ -1,6 +1,6 @@
 {
   "name": "index-pages",
-  "version": "3.6.1",
+  "version": "3.6.2",
   "description": "Create index pages",
   "type": "module",
   "main": "src/index.js",
@@ -25,7 +25,7 @@
   },
   "keywords": [],
   "dependencies": {
-    "@sirherobrine23/http": "3.6.1",
+    "@sirherobrine23/http": "3.6.2",
     "jsdom": "^21.1.1",
     "yaml": "^2.2.1",
     "yargs": "^17.6.2"
