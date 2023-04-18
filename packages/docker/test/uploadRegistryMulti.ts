@@ -6,7 +6,7 @@ import { rm } from "fs/promises";
 import registry, { dockerPlatform } from "../src/index.js";
 import path from "path";
 
-const main = new registry.v2("localhost:5000/sirherobrine23/nodejs_example:latest");
+const main = new registry.v2("localhost:5000/nodejs_example:latest");
 const multi = main.createMultiArch();
 
 const targets: dockerPlatform[] = [
@@ -35,14 +35,13 @@ const targets: dockerPlatform[] = [
 for (const platform of targets) {
   const amd64 = await multi.newPlatform(platform);
   console.log("Creating /random in %s to %s", platform.os, platform.architecture);
-  const root = amd64.createNewBlob("gzip");
+  const root = amd64.createBlob("gzip");
   const randomInfo = await createRandomFile(path.join(tmpdir(), "tmpGhcrFile"), 1024*123);
-  const random = root.entry({name: "/random", size: randomInfo.size});
+  const random = root.addEntry({name: "/random", size: randomInfo.size});
   createReadStream(path.join(tmpdir(), "tmpGhcrFile")).pipe(random);
   await finished(random);
   await rm(path.join(tmpdir(), "tmpGhcrFile"));
-  root.finalize();
-  await finished(root);
+  await root.finalize();
   await amd64.done();
 }
 

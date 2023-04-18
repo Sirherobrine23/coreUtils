@@ -5,6 +5,7 @@ node_modules/
 
 # test files
 examples/souces/
+**/test*/*.log
 *.deb
 *.tar.*
 *.tar

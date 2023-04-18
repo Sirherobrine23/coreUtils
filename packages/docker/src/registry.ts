@@ -1,20 +1,16 @@
 import { createReadStream, createWriteStream, promises as fs } from "node:fs";
+import { compressAvaible, compressStream } from "@sirherobrine23/decompress";
 import { Auth, userAuth } from "./auth.js";
+import { extendsCrypto } from "@sirherobrine23/extends";
 import { extractLayer } from "./utils.js";
 import { goArch, goSystem, parseImage } from "./image.js";
-import { tmpdir } from "node:os";
-import crypto from "node:crypto";
-import http, { reqStream } from "@sirherobrine23/http";
-import path from "node:path";
-import tarStream from "tar-stream";
-import { extendsCrypto } from "@sirherobrine23/extends";
-import { compressAvaible, compressStream } from "@sirherobrine23/decompress";
+import { Readable } from "node:stream";
 import { finished } from "node:stream/promises";
-
-type RecursivePartial<T> = {[P in keyof T]?: T[P] extends (infer U)[] ? RecursivePartial<U>[] : T[P] extends object ? RecursivePartial<T[P]> : T[P];};
-function merge<T>(source: T, merge: RecursivePartial<T>): T {
-  return {...source, ...merge};
-}
+import { tmpdir } from "node:os";
+import tarStream from "tar-stream";
+import crypto from "node:crypto";
+import path from "node:path";
+import { format } from "node:util";
 
 export interface dockerPlatform {
   architecture: goArch;
@@ -23,6 +19,31 @@ export interface dockerPlatform {
   "os.version"?: string;
   features?: string[];
   variant?: string;
+}
+
+/** Debian packages, get from `dpkg-architecture --list -L | grep 'musl-linux-' | sed 's|musl-linux-||g' | xargs`, version 1.21.1, Ubuntu */
+export type debianArch = "all"|"armhf"|"armel"|"mipsn32"|"mipsn32el"|"mipsn32r6"|"mipsn32r6el"|"mips64"|"mips64el"|"mips64r6"|"mips64r6el"|"powerpcspe"|"x32"|"arm64ilp32"|"i386"|"ia64"|"alpha"|"amd64"|"arc"|"armeb"|"arm"|"arm64"|"avr32"|"hppa"|"m32r"|"m68k"|"mips"|"mipsel"|"mipsr6"|"mipsr6el"|"nios2"|"or1k"|"powerpc"|"powerpcel"|"ppc64"|"ppc64el"|"riscv64"|"s390"|"s390x"|"sh3"|"sh3eb"|"sh4"|"sh4eb"|"sparc"|"sparc64"|"tilegx";
+export function debianControlToDockerPlatform(Architecture: debianArch): dockerPlatform {
+  const platform: Partial<dockerPlatform> = {os: "linux"};
+  if (Architecture === "all") platform.architecture = "amd64";
+  else if (Architecture === "amd64") platform.architecture = "amd64";
+  else if (Architecture === "i386") platform.architecture = "ia32";
+  else if (Architecture === "arm64") {
+    platform.architecture = "arm64";
+    platform.variant = "v8";
+  } else if (Architecture === "armhf") {
+    platform.architecture = "arm";
+    platform.variant = "v7";
+  } else if (Architecture === "armeb"||Architecture === "arm") {
+    platform.architecture = "arm";
+    platform.variant = "v6"
+  } else if (Architecture === "s390") platform.architecture = "s390";
+  else if (Architecture === "s390x") platform.architecture = "s390x";
+  else if (Architecture === "ppc64"||Architecture === "ppc64el") platform.architecture = "ppc64";
+  else if (Architecture === "mipsel") platform.architecture = "mipsel";
+  else if (Architecture === "mips") platform.architecture = "mips";
+  else throw new Error(format("Cannot convert %O to docker/OCI platform specs!", Architecture));
+  return platform as dockerPlatform;
 }
 
 export interface multiArchSchema {
@@ -126,43 +147,36 @@ export class v2 {
     "application/json"
   ]);
 
-  async getTags(token = new Auth(this.image, "pull", this.authUser)): Promise<string[]> {
-    await token.setup();
-    const reqURL = new URL(path.posix.join("/v2", this.image.owner, this.image.repo, "tags/list"), `http://${this.image.registry}`);
-    return (await http.jsonRequest(reqURL, {
-      headers: {
-        Authorization: "Bearer "+token.token,
-      }
+  async getTags(token = new Auth(this.image)): Promise<string[]> {
+    if (this.authUser) token.setAuth(this.authUser);
+    return (await token.request({
+      reqPath: ["/v2", this.image.owner, this.image.repo, "tags/list"],
     })).body.tags;
   }
 
-  async getManifets<T = any>(ref?: string, token = new Auth(this.image, "pull", this.authUser)) {
-    await token.setup();
+  async getManifets<T = any>(ref?: string, token = new Auth(this.image)) {
+    if (this.authUser) token.setAuth(this.authUser);
     if (!ref) ref = (await this.getTags(token)).at(-1);
-    const reqURL = new URL(path.posix.join("/v2", this.image.owner, this.image.repo, "manifests", ref), `http://${this.image.registry}`);
-    const reqOptions: Omit<http.requestOptions, "url"> = {
+    const manifest = await token.request<T>({
+      reqPath: ["/v2", this.image.owner, this.image.repo, "manifests", ref],
       headers: {
-        Authorization: "Bearer "+token.token,
-        accept: Array.from(this.manifestsAccepts).join(", ")
+        accept: Array.from(this.manifestsAccepts).join(", "),
       }
-    };
-    if (await http.bufferRequest(reqURL, merge(reqOptions, {method: "HEAD"})).then(() => false).catch(() => true)) throw new TypeError("This digest/ref not exists in registry");
-    return http.jsonRequestBody<T>(reqURL, reqOptions);
+    });
+    if (manifest.statusCode !== 200) throw new Error("This digest/ref not exists in registry");
+    return manifest.body;
   }
 
-  async deleteManifets(ref?: string, token = new Auth(this.image, "push", this.authUser)) {
-    await token.setup();
+  async deleteManifets(ref?: string, token = new Auth(this.image)) {
+    if (this.authUser) token.setAuth(this.authUser);
     if (!ref) ref = (await this.getTags(token)).at(-1);
-    const reqURL = new URL(path.posix.join("/v2", this.image.owner, this.image.repo, "manifests", ref), `http://${this.image.registry}`);
-    const reqOptions: Omit<http.requestOptions, "url"> = {
-      method: "delete",
-      headers: {
-        Authorization: "Bearer "+token.token,
-        accept: Array.from(this.manifestsAccepts).join(", ")
-      }
-    };
-    if (await http.bufferRequest(reqURL, merge(reqOptions, {method: "HEAD"})).then(() => false).catch(() => true)) throw new TypeError("This digest/ref not exists in registry");
-    await http.bufferRequest(reqURL, reqOptions);
+    if ((await token.setAction("push").request({reqPath: ["/v2", this.image.owner, this.image.repo, "manifests", ref], method: "HEAD"})).statusCode !== 200) throw new TypeError("This digest/ref not exists in registry");
+    const res = await token.request({
+      method: "DELETE",
+      reqPath: ["/v2", this.image.owner, this.image.repo, "manifests", ref],
+      headers: {accept: Array.from(this.manifestsAccepts).join(", ")}
+    });
+    if (res.statusCode !== 201) throw new Error("Cannot delete manifest!");4
   }
 
   /**
@@ -172,20 +186,15 @@ export class v2 {
    * @param token - Token class to Auth
    * @returns Layer stream
    */
-  async getBlob(ref: string, token = new Auth(this.image, "pull", this.authUser)): Promise<reqStream> {
-    await token.setup();
-    const reqURL = new URL(path.posix.join("/v2", this.image.owner ?? "", this.image.repo, "blobs", ref), `http://${this.image.registry}`);
-    const reqOptions: Omit<http.requestOptions, "url"> = {
-      headers: {
-        Authorization: "Bearer "+token.token
-      }
-    };
-    if (await http.bufferRequest(reqURL, merge(reqOptions, {method: "HEAD"})).then(() => false).catch(() => true)) throw new TypeError("This digest/ref not exists in registry");
-    return http.streamRequest(reqURL, reqOptions);
+  async getBlob(ref: string, token = new Auth(this.image)) {
+    if (this.authUser) token.setAuth(this.authUser);
+    const req = await token.request({reqPath: ["/v2", this.image.owner, this.image.repo, "blobs", ref]});
+    if (req.statusCode !== 200) throw new TypeError("This digest/ref not exists in registry");
+    return Readable.from(req.body);
   }
 
-  async extractLayer(ref: string, token = new Auth(this.image, "pull", this.authUser)) {
-    await token.setup();
+  async extractLayer(ref: string, token = new Auth(this.image)) {
+    if (this.authUser) token.setAuth(this.authUser);
     const blob = await this.getBlob(ref, token);
     return new extractLayer(blob);
   }
@@ -196,18 +205,13 @@ export class v2 {
    * @param ref - Layer digest
    * @param token - Token class to Auth
    */
-  async deleteBlob(ref: string, token = new Auth(this.image, "push", this.authUser)) {
-    await token.setup();
-    const reqURL = new URL(path.posix.join("/v2", this.image.owner ?? "", this.image.repo, "blobs", ref), `http://${this.image.registry}`);
-    const reqOptions: Omit<http.requestOptions, "url"> = {
-      method: "HEAD",
-      headers: {
-        Authorization: "Bearer "+token.token
-      }
-    };
-    if (await http.bufferRequest(reqURL, merge(reqOptions, {method: "HEAD"})).then(() => false).catch(() => true)) throw new TypeError("This digest/ref not exists in registry");
-    reqOptions.method = "DELETE";
-    await http.bufferRequest(reqURL, reqOptions);
+  async deleteBlob(ref: string, token = new Auth(this.image)) {
+    if (this.authUser) token.setAuth(this.authUser);
+    const req = await token.setAction("push").request({
+      method: "DELETE",
+      reqPath: ["/v2", this.image.owner, this.image.repo, "blobs", ref]
+    });
+    if (req.statusCode !== 200) throw new TypeError("This digest/ref not exists in registry");
   }
 
   /**
@@ -216,207 +220,22 @@ export class v2 {
    * @param token
    * @returns
    */
-  async getBlobManifest<T = any>(ref: string, token = new Auth(this.image, "pull", this.authUser)) {
-    await token.setup();
-    const reqURL = new URL(path.join("/v2", this.image.owner ?? "", this.image.repo, "blobs", ref), `http://${this.image.registry}`);
-    const reqOptions: Omit<http.requestOptions, "url"> = {
+  async getBlobManifest<T = any>(ref: string, token = new Auth(this.image)) {
+    if (this.authUser) token.setAuth(this.authUser);
+    const req = await token.request<T>({
+      reqPath: ["/v2", this.image.owner, this.image.repo, "blobs", ref],
       headers: {
-        Authorization: "Bearer "+token.token,
         accept: Array.from(this.manifestsAccepts).join(", "),
       }
-    };
-    if (await http.bufferRequest(reqURL, merge(reqOptions, {method: "HEAD"})).then(() => false).catch(() => true)) throw new TypeError("This digest/ref not exists in registry");
-    return http.jsonRequest<T>(reqURL, reqOptions).then(({body}) => body);
-  }
-
-  /**
-   * Publish blobs and manifest to Registry
-   */
-  async createImage(token = new Auth(this.image, "push", this.authUser)) {
-    if (!(token.actionHas("push"))) throw new Error("Invalid publish Auth, required Push action!");
-    const { owner, repo } = this.image;
-    const tmpLocation = await fs.mkdtemp(path.join(tmpdir(), "ghcr_tmp"));
-    const sha256Locations = new Map<string, string>();
-    let lock = false;
-
-    /** Create tar blob to upload to registry un future */
-    function createNewBlob(compress: Exclude<compressAvaible, "deflate"|"xz"> = "gzip") {
-      if (lock) throw new Error("Cannnot set more blob images!");
-      const tmpFile = path.join(tmpLocation, (crypto.randomBytes(6).toString("hex"))+".tar"+(compress === "passThrough" ? "" : ".gz"));
-      const tarr = tarStream.pack();
-      const com = tarr.pipe(compressStream(compress));
-      const hash = extendsCrypto.createHashAsync(com, "sha256", "hex")
-      finished(com.pipe(createWriteStream(tmpFile))).then(async () => {
-        const { hash: { sha256 } } = await hash;
-        sha256Locations.set(sha256, tmpFile);
-      }).catch(err => tarr.emit("error", err));
-      return tarr;
-    }
-
-    const annotations = new Map<string, string>();
-    const base: imageSchema = {
-      schemaVersion: 2,
-      config: undefined,
-      layers: [],
-      annotations: {},
-    }
-
-    const publish = async (platform: dockerPlatform, tagName?: string) => {
-      lock = true;
-      if (!token.token) await token.setup();
-      base.annotations = Array.from(annotations.keys()).reduce<typeof base["annotations"]>((acc, key) => {acc[key] = annotations.get(key); return acc;}, {});
-      if (!(Object.keys(base.annotations)).length) delete base.annotations;
-
-      for (const sha256 of Array.from(sha256Locations.keys())) {
-        const filePath = sha256Locations.get(sha256), { size: fileSize } = await fs.lstat(filePath);
-        let digest = "sha256:"+sha256;
-        const { statusCode, headers } = await http.bufferRequest(new URL(path.posix.join("/v2", owner, repo, "blobs/uploads/"), `http://${this.image.registry}`), {
-          disableHTTP2: true,
-          method: "POST",
-          headers: {
-            ...(token.token ? {Authorization: "Bearer "+token.token} : {}),
-            "Content-Type": "application/octet-stream",
-            "Content-Length": fileSize.toString(),
-          },
-          body: createReadStream(filePath)
-        });
-
-        if (statusCode === 202) {
-          const uploadUuid = new URL(headers.location as string, `http://${this.image.registry}`);
-          const uuidExist = await http.bufferRequest(uploadUuid, {disableHTTP2: true, headers: {...(token.token ? {Authorization: "Bearer "+token.token} : {})}}).then(({headers, statusCode}) => ({headers, statusCode}), (err: http.httpCoreError) => ({headers: err.headers, statusCode: err.httpCode}));
-          if (!(uuidExist.statusCode === 204 || uuidExist.statusCode === 200)) throw new Error("Invalid uuid to Upload!");
-          else {
-            await http.bufferRequest(new URL((uuidExist.headers.location||headers.location) as string, `http://${this.image.registry}`), {
-              disableHTTP2: true,
-              method: "PUT",
-              query: {digest},
-              headers: {
-                ...(token.token ? {Authorization: "Bearer "+token.token} : {}),
-                "Content-Type": "application/octet-stream",
-                "Content-Length": fileSize.toString(),
-              },
-              body: createReadStream(filePath),
-            }).then(({statusCode}) => {if (statusCode !== 201) throw new Error("Cannot upload blob file!");});
-          }
-        } else if (statusCode === 201) {} else throw new Error("Invalid registry response!");
-
-        await new Promise<void>((done, reject) => {
-          const req = http.streamRoot(new URL(path.posix.join("/v2", this.image.owner ?? "", this.image.repo, "blobs", digest), `http://${this.image.registry}`), {
-            disableHTTP2: true,
-            headers: token.token ? {Authorization: "Bearer "+token.token}:{}
-          }).on("error", (err: http.HTTPError) => {
-            if (err.response?.statusCode === 404) return reject(new Error("Invalid blob upload"));
-            const errorC = new http.httpCoreError();
-            errorC.httpCode = err.response?.statusCode;
-            errorC.url = err.response?.url;
-            errorC.message = err.message;
-            errorC.headers = err.response?.headers;
-            errorC.rawBody = err.response?.body as any;
-            try {
-              errorC.body = JSON.parse(String(errorC.rawBody));
-              delete errorC.rawBody;
-            } catch {}
-            reject(errorC);
-          }).on("response", () => {
-            req.end();
-            done();
-          });
-        });
-
-        base.layers.push({
-          mediaType: filePath.endsWith(".gz") ? "application/vnd.oci.image.layer.v1.tar+gzip" : "application/vnd.oci.image.layer.v1.tar",
-          digest,
-          size: fileSize,
-        });
-        await fs.rm(filePath, {force: true});
-      }
-
-      // Check layers
-      if (base.layers.length <= 0) {
-        lock = false;
-        throw new Error("Invalid layer, must have more than one!");
-      }
-
-      // Blob manifest
-      const config: blobImage = {
-        ...platform,
-        rootfs: {
-          type: "layers",
-          diff_ids: base.layers.map(key => key.digest),
-        }
-      };
-      const configString = JSON.stringify(config, null, 2);
-      const configSha256 = "sha256:"+(await extendsCrypto.createHashAsync(configString, "sha256")).hash.sha256;
-
-      const { statusCode, headers: blobManifestHead } = await http.bufferRequest(new URL(path.posix.join("/v2", owner, repo, "blobs/uploads/"), `http://${this.image.registry}`), {
-        disableHTTP2: true,
-        method: "POST",
-        headers: {
-          ...(token.token ? {Authorization: "Bearer "+token.token} : {}),
-          "Content-Type": "application/vnd.oci.image.config.v1+json",
-          "Content-Length": configString.length.toString(),
-        },
-        body: configString,
-      });
-
-      if (statusCode === 202) {
-        const uploadUuid = new URL(blobManifestHead.location as string, `http://${this.image.registry}`);
-        const uuidExist = await http.bufferRequest(uploadUuid, {disableHTTP2: true, headers: {...(token.token ? {Authorization: "Bearer "+token.token} : {})}}).then(({headers, statusCode}) => ({headers, statusCode}), (err: http.httpCoreError) => ({headers: err.headers, statusCode: err.httpCode}));
-        if (!(uuidExist.statusCode === 204 || uuidExist.statusCode === 200)) throw new Error("Invalid uuid to Upload!");
-        else {
-          await http.bufferRequest(new URL((uuidExist.headers.location||blobManifestHead.location) as string, `http://${this.image.registry}`), {
-            disableHTTP2: true,
-            method: "PUT",
-            query: {digest: configSha256},
-            headers: {
-              ...(token.token ? {Authorization: "Bearer "+token.token} : {}),
-              "Content-Type": "application/vnd.oci.image.config.v1+json",
-              "Content-Length": configString.length.toString(),
-            },
-            body: configString
-          }).then(({statusCode}) => {if (statusCode !== 201) throw new Error("Cannot upload blob file!");});
-        }
-      } else if (statusCode === 201) {} else throw new Error("Invalid registry response!");
-      base.config = {
-        mediaType: "application/vnd.oci.image.config.v1+json",
-        digest: configSha256,
-        size: configString.length,
-      };
-
-      // Upload manifest
-      const manifest = JSON.stringify(base, null, 2);
-      const manifestSha256 = (await extendsCrypto.createHashAsync(manifest, "sha256")).hash.sha256;
-      tagName ||= ("sha256:"+manifestSha256);
-      const uploadManifest = new URL(path.posix.join("/v2", this.image.owner, this.image.repo, "manifests", tagName), `http://${this.image.registry}`);
-      const { headers } = await http.bufferRequest(uploadManifest, {
-        disableHTTP2: true,
-        method: "PUT",
-        headers: {
-          ...(token.token ? {Authorization: "Bearer "+token.token}:{}),
-          "Content-Type": "application/vnd.oci.image.manifest.v1+json",
-        },
-        body: manifest,
-      });
-      await fs.rm(tmpLocation, {recursive: true, force: true});
-      return {
-        tagName,
-        digest: String(headers["docker-content-digest"]),
-        blobImage: config,
-        manifestJSON: base,
-        manifestString: manifest
-      };
-    }
-
-    return {
-      createNewBlob,
-      publish,
-      annotations,
-    };
+    });
+    if (req.statusCode !== 200) throw new TypeError("This digest/ref not exists in registry");
+    return req.body;
   }
 
   /** Create multi arch schema to publish in Registry */
-  createMultiArch(token = new Auth(this.image, "push", this.authUser)) {
-    if (token.actionHas("pull")) throw new Error("Require push action");
+  createMultiArch(token = new Auth(this.image)) {
+    if (this.authUser) token.setAuth(this.authUser);
+    if (token.has("pull")) throw new Error("Require push action");
     let lock = false;
     const base: multiArchSchema = {
       schemaVersion: 2,
@@ -425,22 +244,21 @@ export class v2 {
 
     const publish = async (tagName?: string) => {
       if (base.manifests.length <= 0) throw new Error("Invalid layer, must have more than one!");
-      if (!token.token) await token.setup();
       if (lock) throw new Error("Publish locked!");
       lock = true;
       const manifest = JSON.stringify(base, null, 2);
       const manifestSha256 = (await extendsCrypto.createHashAsync(manifest, "sha256")).hash.sha256;
       tagName ||= ("sha256:"+manifestSha256);
-      const uploadManifest = new URL(path.posix.join("/v2", this.image.owner, this.image.repo, "manifests", tagName), `http://${this.image.registry}`);
-      const { headers } = await http.bufferRequest(uploadManifest, {
+      const { headers, statusCode, body } = await token.setAction("push").request({
         disableHTTP2: true,
         method: "PUT",
+        reqPath: ["/v2", this.image.owner, this.image.repo, "manifests", tagName],
         headers: {
-          ...(token.token ? {Authorization: "Bearer "+token.token}:{}),
           "Content-Type": "application/vnd.oci.image.index.v1+json",
         },
-        body: manifest,
+        body: () => manifest,
       });
+      if (statusCode !== 201) throw body;
       return {
         tagName,
         digest: String(headers["docker-content-digest"]),
@@ -450,11 +268,11 @@ export class v2 {
 
     const newPlatform = async (platform: dockerPlatform) => {
       if (lock) throw new Error("Publish locked!");
-      const create = await this.createImage(token);
+      const create = await this.createImage(platform, new Auth(this.image));
       return {
-        createNewBlob: create.createNewBlob,
+        createBlob: create.createBlob,
         async done() {
-          const { digest, manifestString } = await create.publish(platform);
+          const { digest, manifests: { manifest: { manifestString } } } = await create.finalize();
           const loc = base.manifests.push({
             mediaType: "application/vnd.oci.image.config.v1+json",
             digest,
@@ -466,9 +284,210 @@ export class v2 {
       }
     }
 
-    return {
+    return Object.freeze({
       publish,
       newPlatform,
-    };
+    });
   }
+
+  /**
+   * Publish blobs and manifest to Registry
+   *
+   * Registry publish specs from:
+   * - https://docs.docker.com/registry/spec/api/
+   * - https://github.com/opencontainers/distribution-spec/blob/e79ab906f303fee1510f07f8273f5984689f5efe/conformance/02_push_test.go
+   * - https://github.com/distribution/distribution/blob/main/docs/spec/api.md
+   */
+  async createImage(platform: dockerPlatform, token = new Auth(this.image)) {
+    if (this.authUser) token.setAuth(this.authUser);
+    const tmpLocation = await fs.mkdtemp(path.join(tmpdir(), "ghcr_tmp")),
+    annotations = new Map<string, string>(),
+    /** Plaform manifest */
+    manifest: imageSchema = {
+      schemaVersion: 2,
+      config: {mediaType: "application/vnd.oci.image.config.v1+json", digest: "", size: -1},
+      layers: []
+    },
+    /** Blob manifest */
+    blob: blobImage = {
+      ...platform,
+      rootfs: {
+        type: "layers",
+        diff_ids: []
+      }
+    };
+
+    const blobUpload = async (fileSize: number, src: (start?: number, end?: number) => any, mediatype: string = "application/octet-stream") => {
+      const digest = "sha256:"+(await extendsCrypto.createHashAsync(src(), "sha256", "hex")).hash.sha256;
+      let initUpload = await token.setAction("push").request({
+        reqPath: ["/v2", this.image.owner, this.image.repo, "blobs/uploads/"],
+        disableHTTP2: true,
+        method: "POST",
+        headers: {
+          Connection: "close",
+          "Content-Type": mediatype,
+          "Content-Length": "0",
+        },
+        body: src,
+      });
+
+      if (initUpload.statusCode === 201) return digest;
+      else if (initUpload.statusCode === 202) {
+        if (typeof initUpload.headers.location !== "string") throw initUpload;
+        const fistPut = await token.request({
+          disableHTTP2: true,
+          reqPath: initUpload.headers.location,
+          method: "PUT",
+          query: {digest},
+          headers: {
+            "Content-Type": mediatype,
+            "Content-Length": fileSize.toString(),
+            "Transfer-Encoding": "chunked",
+            Connection: "close",
+          },
+          body: src
+        });
+
+        // Success put
+        if (fistPut.statusCode === 201) return digest;
+        initUpload = await token.request({
+          disableHTTP2: true,
+          method: "POST",
+          reqPath: ["/v2", this.image.owner, this.image.repo, "blobs/uploads/"],
+          headers: {
+            Connection: "close",
+            "Content-Type": mediatype,
+            "Content-Length": "0",
+          },
+          body: src,
+        });
+
+        if (initUpload.statusCode === 201) return digest;
+        else {
+          if (typeof initUpload.headers?.location !== "string") throw initUpload;
+          const blobPatch = await token.request({
+            disableHTTP2: true,
+            method: "PATCH",
+            reqPath: initUpload.headers.location,
+            headers: {
+              "Content-Type": mediatype,
+              "Transfer-Encoding": "chunked",
+              Connection: "close",
+              // "Content-Length": fileSize.toString(),
+            },
+            body: src,
+          });
+
+          if (!(blobPatch.statusCode === 202 || blobPatch.statusCode === 201)) throw blobPatch;
+          if (blobPatch.statusCode === 201) return digest;
+
+          let putBlob = await token.request({
+            disableHTTP2: true,
+            method: "PUT",
+            reqPath: blobPatch.headers.location,
+            // query: {digest},
+            headers: {
+              "Content-Length": "0",
+              "Content-Type": mediatype,
+              Connection: "close"
+            },
+            body: src
+          });
+
+          if (putBlob.statusCode === 201) return digest;
+          throw putBlob;
+        }
+      }
+      throw initUpload;
+    }
+
+    /**
+     * Create new layer and publish
+     *
+     * @param compress - Compress layer. Recomends `gzip`.
+     * @returns
+     */
+    const createBlob = (compress: Exclude<compressAvaible, "deflate"|"xz">) => {
+      const tar = tarStream.pack();
+      let filePath: string;
+      const filePipe = tar.pipe(compressStream(compress)).pipe(createWriteStream((filePath = path.join(tmpLocation, crypto.randomBytes(8).toString("hex")))));
+      const annotations = new Map<string, string>();
+      return Object.freeze({
+        annotations,
+        addEntry(headers: tarStream.Headers) {
+          return tar.entry(headers);
+        },
+        async finalize() {
+          tar.finalize()
+          return finished(filePipe, {error: true}).then(async () => {
+            const size = (await fs.lstat(filePath)).size;
+            const digest = await blobUpload(size, (start, end) => createReadStream(filePath, {start, end}));
+            blob.rootfs.diff_ids.push(digest);
+            manifest.layers.push({
+              mediaType: compress === "gzip" ? "application/vnd.oci.image.layer.v1.tar+gzip" : "application/vnd.oci.image.layer.v1.tar",
+              digest,
+              size,
+              annotations: Array.from(annotations.keys()).reduce<typeof manifest["annotations"]>((acc, key) => {
+                acc[key] = annotations.get(key);
+                return acc;
+              }, {})
+            });
+          }).then(() => fs.rm(filePath));
+        },
+      });
+    }
+
+    return Object.freeze({
+      annotations,
+      createBlob,
+      getManifests() {
+        return {
+          manifest: {...manifest},
+          blob: {...blob},
+        };
+      },
+      finalize: async (tagName?: string) => {
+        // Upload blob manifest
+        const blobString = JSON.stringify(blob, null, 2);
+        manifest.config.digest = await blobUpload((manifest.config.size = blobString.length), (start, end) => {
+          let data = blobString;
+          if (start >= 0 && end <= data.length) data = data.slice(start, end);
+          else if (start >= 0) data = data.slice(start);
+          return data;
+        }, "application/vnd.oci.image.config.v1+json");
+
+        // Manifest
+        manifest.annotations = Array.from(annotations.keys()).reduce<typeof manifest["annotations"]>((acc, key) => {acc[key] = annotations.get(key); return acc;}, {});
+        const manifestString = JSON.stringify(manifest, null, 2), manifestSHA256 = "sha256:"+(await extendsCrypto.createHashAsync(manifestString)).hash.sha256;
+        tagName ||= manifestSHA256;
+
+        const manifestStatus = await token.request({
+          disableHTTP2: true,
+          reqPath: ["/v2", this.image.owner, this.image.repo, "manifests", tagName],
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/vnd.oci.image.manifest.v1+json",
+          },
+          body: () => manifestString,
+        });
+        await fs.rm(tmpLocation, {recursive: true, force: true});
+        if (manifestStatus.statusCode !== 201) throw manifestStatus;
+        return {
+          tagName,
+          digest: String(manifestStatus.headers["docker-content-digest"]),
+          manifests: {
+            manifest: {
+              manifets: {...manifest},
+              manifestString,
+            },
+            blob: {
+              blob: {...blob},
+              blobString,
+            },
+          }
+        };
+      }
+    });
+  }
+
 }

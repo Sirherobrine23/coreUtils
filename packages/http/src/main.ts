@@ -71,6 +71,71 @@ export function streamRoot(re: validURL|requestOptions, options?: Omit<requestOp
   return request;
 }
 
+export class dummyRequestResponse<T = any> {
+  url?: string;
+  headers?: Headers;
+  /** if reponse return stream.Redable, if error return body and if else JSON reponse parse */
+  body?: T;
+  statusCode?: number;
+  statusMessage?: string;
+  debug?: any
+}
+
+export async function dummyRequest<T = any>(re: validURL|requestOptions, options?: Omit<requestOptions, "url">) {
+  return new Promise<dummyRequestResponse<T>>(done => {
+    const dummy = new dummyRequestResponse<T>();
+    // dummy.debug = ([re, options]);
+    const request = streamRoot(re, options).on("error", (err: HTTPError) => {
+      dummy.statusCode = err.response?.statusCode;
+      dummy.statusMessage = err.message;
+      dummy.headers = err.response?.headers;
+      dummy.body = err.response?.body as any;
+      try {dummy.body = JSON.parse(String(dummy.body));} catch {}
+      dummy.url = (request.response?.redirectUrls?.length > 0 ? request.response.redirectUrls.at(-1) : new URL((typeof re === "string"||re instanceof URL) ? re.toString() : re.url.toString())).toString();
+      done(dummy);
+    }).on("response", async () => {
+      dummy.body = stream.Readable.from(request) as any;
+      dummy.url = (request.response?.redirectUrls?.length > 0 ? request.response.redirectUrls.at(-1) : new URL((typeof re === "string"||re instanceof URL) ? re.toString() : re.url.toString())).toString();
+      dummy.statusCode = request.response.statusCode;
+      dummy.statusMessage = request.response.statusMessage;
+      dummy.headers = request.response?.headers||{};
+      done(dummy);
+    });
+  });
+}
+
+export async function jsonDummyRequest<T = any>(re: validURL|requestOptions, options?: Omit<requestOptions, "url">) {
+  const dummy = new dummyRequestResponse<T>();
+  const request = streamRoot(re, options);
+  let buffers: Buffer[] = [];
+  await new Promise<void>((done) => request.pipe(new stream.Writable({
+    final(callback) {
+      done();
+      callback();
+    },
+    destroy(err: HTTPError, callback) {
+      if (err) {
+        dummy.body = err.response?.body as any;
+        try {dummy.body = JSON.parse(String(dummy.body));} catch {}
+        done();
+      }
+      callback(err);
+    },
+    write(chunk, encoding, callback) {
+      if (encoding !== "binary") chunk = Buffer.from(chunk, encoding);
+      buffers.push(chunk);
+      callback();
+    }
+  })).on("error", () => {}));
+  dummy.url = (request.response?.redirectUrls?.length > 0 ? request.response.redirectUrls.at(-1) : new URL((typeof re === "string"||re instanceof URL) ? re.toString() : re.url.toString())).toString();
+  dummy.statusCode = request.response.statusCode;
+  dummy.statusMessage = request.response.statusMessage;
+  dummy.headers = request.response?.headers||{};
+  if (!dummy.body) dummy.body = JSON.parse(Buffer.concat(buffers).toString("utf8"));
+  buffers = null;
+  return dummy;
+}
+
 /**
  * Create reqest same to fetch but return stream response
  *
@@ -81,8 +146,8 @@ export async function streamRequest(re: validURL|requestOptions, options?: Omit<
   (await new Promise<void>((done, reject) => request.on("error", (err: HTTPError) => {
     const errorC = new httpCoreError();
     errorC.httpCode = err.response?.statusCode;
-    errorC.url = err.response?.url;
     errorC.message = err.message;
+    errorC.url = err.response?.url;
     errorC.headers = err.response?.headers;
     errorC.rawBody = err.response?.body as any;
     try {
