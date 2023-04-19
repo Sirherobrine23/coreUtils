@@ -60,6 +60,7 @@ export type githubTree = {
   } | {
     type: "blob",
     size: number,
+    getFile?(): stream.Readable;
   }))[],
 };
 
@@ -81,7 +82,7 @@ export async function repositoryManeger(owner: string, repository: string, relOp
     else throw err;
   });
 
-  // Octokit class
+  // Octokit
   const octokit = new Octokit({auth: relOptions.token});
 
   /**
@@ -130,7 +131,30 @@ export async function repositoryManeger(owner: string, repository: string, relOp
       query: {
         recursive: true
       }
-    }).catch((err: httpCoreError) => {
+    }).then(res => {
+      res.tree = res.tree.map(tg => {
+        if (tg.type === "blob") {
+          tg.getFile = (): stream.Readable => {
+            return new (class rawFile extends stream.Readable {
+              constructor() {
+                super({read(){}});
+                (async () => {
+                  return (await streamRequest(new URL(path.posix.join(owner, repository, branch, tg.path), "https://raw.githubusercontent.com"), {
+                    headers: relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {},
+                    query: {token: relOptions.token}
+                  })).on("data", data => this.push(data, "binary")).once("close", () =>  this.push(null)).on("error", this.emit.bind(this, "error"));
+                })().catch(err => {
+                  this.emit("error", err);
+                  this.push(null);
+                });
+              }
+            })()
+          }
+        }
+        return tg;
+      })
+      return res;
+    }, (err: httpCoreError) => {
       if (err.httpCode === 404) throw new Error("Branch not exists");
       else if (err.httpCode === 403) throw new Error("Rate limit max, wait "+err.headers["x-ratelimit-reset"]);
       else if (err.httpCode === 401) throw new Error("Invalid token");
@@ -322,7 +346,7 @@ export async function repositoryManeger(owner: string, repository: string, relOp
     },
     git: {
       getTree,
-      getRawFile(branch: string, filePath: string) {
+      getRawFile(branch: string, filePath: string): stream.Readable {
         return new (class rawFile extends stream.Readable {
           constructor() {
             super({read(){}});
@@ -331,7 +355,10 @@ export async function repositoryManeger(owner: string, repository: string, relOp
                 headers: relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {},
                 query: {token: relOptions.token}
               })).on("data", data => this.push(data, "binary")).once("close", () =>  this.push(null)).on("error", this.emit.bind(this, "error"));
-            })().catch(err => this.emit("error", err));
+            })().catch(err => {
+              this.emit("error", err);
+              this.push(null);
+            });
           }
         })()
       }

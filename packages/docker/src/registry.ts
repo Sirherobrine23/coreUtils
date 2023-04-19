@@ -149,7 +149,7 @@ export class v2 {
 
   async getTags(token = new Auth(this.image)): Promise<string[]> {
     if (this.authUser) token.setAuth(this.authUser);
-    return (await token.request({
+    return (await token.requestJSON({
       reqPath: ["/v2", this.image.owner, this.image.repo, "tags/list"],
     })).body.tags;
   }
@@ -157,7 +157,7 @@ export class v2 {
   async getManifets<T = any>(ref?: string, token = new Auth(this.image)) {
     if (this.authUser) token.setAuth(this.authUser);
     if (!ref) ref = (await this.getTags(token)).at(-1);
-    const manifest = await token.request<T>({
+    const manifest = await token.requestJSON<T>({
       reqPath: ["/v2", this.image.owner, this.image.repo, "manifests", ref],
       headers: {
         accept: Array.from(this.manifestsAccepts).join(", "),
@@ -170,8 +170,7 @@ export class v2 {
   async deleteManifets(ref?: string, token = new Auth(this.image)) {
     if (this.authUser) token.setAuth(this.authUser);
     if (!ref) ref = (await this.getTags(token)).at(-1);
-    if ((await token.setAction("push").request({reqPath: ["/v2", this.image.owner, this.image.repo, "manifests", ref], method: "HEAD"})).statusCode !== 200) throw new TypeError("This digest/ref not exists in registry");
-    const res = await token.request({
+    const res = await token.setAction("push").request({
       method: "DELETE",
       reqPath: ["/v2", this.image.owner, this.image.repo, "manifests", ref],
       headers: {accept: Array.from(this.manifestsAccepts).join(", ")}
@@ -222,7 +221,7 @@ export class v2 {
    */
   async getBlobManifest<T = any>(ref: string, token = new Auth(this.image)) {
     if (this.authUser) token.setAuth(this.authUser);
-    const req = await token.request<T>({
+    const req = await token.requestJSON<T>({
       reqPath: ["/v2", this.image.owner, this.image.repo, "blobs", ref],
       headers: {
         accept: Array.from(this.manifestsAccepts).join(", "),
