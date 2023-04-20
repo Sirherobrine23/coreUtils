@@ -1,58 +1,50 @@
-import { createReadStream } from "fs";
-import { createRandomFile } from "@sirherobrine23/extends";
+import { randomBytesStream } from "@sirherobrine23/extends";
+import { randomInt } from "crypto";
 import { finished } from "stream/promises";
-import { tmpdir } from "os";
-import { rm } from "fs/promises";
-import registry, { dockerPlatform } from "../src/index.js";
-import path from "path";
+import { Readable } from "stream";
+import registry from "../src/index.js";
 
-const main = new registry.v2("localhost:5000/nodejs_example:latest");
-const multi = main.createMultiArch();
-
-const targets: dockerPlatform[] = [
-  {
-    os: "linux",
-    architecture: "amd64"
-  },
-  {
-    os: "linux",
-    architecture: "arm64"
-  },
-  {
-    os: "android",
-    architecture: "arm64"
-  },
-  {
-    os: "windows",
-    architecture: "amd64"
-  },
-  {
-    os: "windows",
-    architecture: "arm64"
-  },
+const targets: ConstructorParameters<typeof registry.v2>[] = [
+  ["localhost:5000/sirherobrine23/dummy:latest"],
+  ["localhost:5000/sirherobrine23/dummy2:latest"],
 ];
 
-for (const platform of targets) {
-  const amd64 = await multi.newPlatform(platform);
-  console.log("Creating /random in %s to %s", platform.os, platform.architecture);
-  const root = amd64.createBlob("gzip");
-  const randomInfo = await createRandomFile(path.join(tmpdir(), "tmpGhcrFile"), 1024*123);
-  const random = root.addEntry({name: "/random", size: randomInfo.size});
-  createReadStream(path.join(tmpdir(), "tmpGhcrFile")).pipe(random);
-  await finished(random);
-  await rm(path.join(tmpdir(), "tmpGhcrFile"));
-  await root.finalize();
-  await amd64.done();
-}
+for (const [img, auth] of targets) {
+  try {
+    const main = new registry.v2(img, auth);
+    console.log("Creating layer");
+    const create = main.createMultiArch();
+    for (const arch of ["arm64", "amd64"]) {
+      const platform = await create.newPlatform({os: "linux", architecture: arch as any,});
+      const fileCount = randomInt(1, 8);
+      console.log("Files to create: %f", fileCount);
+      for (let i = 0; i < fileCount; i++) {
+        const root = platform.createBlob("gzip");
+        const size = Array(randomInt(1, 2)).fill(1024).reduce((acc, v) => acc*v, 1024);
+        console.log("Creating /random%f, with size: %f", i, size);
+        const entry = root.addEntry({name: "/random"+i, size});
+        await finished((new randomBytesStream(size)).pipe(entry));
+        console.log("Digest: %O", await root.finalize());
+      }
+      console.log(await platform.done())
+    }
 
-try {
-  console.dir(await multi.publish("multi"), {
-    colors: true,
-    depth: null
-  });
-} catch (err) {
-  console.dir(err, {
-    colors: true,
-    depth: null,
-  })
+    console.log("uploading");
+    console.dir(await create.publish("multi"), {
+      colors: true,
+      depth: null,
+    });
+    console.log("Eded upload.");
+  } catch (err) {
+    if (err?.body instanceof Readable) {
+      err.body.pipe(process.stdout);
+      await finished(err.body);
+      err.body = null;
+    }
+    console.dir(err, {
+      colors: true,
+      depth: null
+    });
+    process.exit(1);
+  }
 }

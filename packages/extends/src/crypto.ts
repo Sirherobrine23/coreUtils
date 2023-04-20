@@ -81,8 +81,9 @@ export function createHash(target?: "all"|hashAlgorithm, digestText?: crypto.Bin
 }
 
 export async function createHashAsync(from: stream.Readable|Buffer|string, ...args: Parameters<typeof createHash>) {
+  if (!(from instanceof Buffer||from instanceof stream.Readable||typeof from === "string")) throw new Error("Invalid input");
   return new Promise<hashObject>((resolve, reject) => {
-    if (from instanceof Buffer||typeof from === "string") from = stream.Readable.from(Buffer.from(from));
+    if (from instanceof Buffer || typeof from === "string") from = stream.Readable.from(from);
     return from.pipe(createHash(...args)).on("hashObject", resolve).on("error", reject);
   });
 }

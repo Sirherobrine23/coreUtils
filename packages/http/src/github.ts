@@ -6,15 +6,21 @@ import path from "node:path";
 import yaml from "yaml";
 import fs from "node:fs/promises";
 
-export async function testToken(token: string) {
-  return jsonRequestBody("https://api.github.com/user", {
+export type User = Awaited<ReturnType<Octokit["rest"]["users"]["list"]>>["data"][number];
+export async function getUserInfo(token: string) {
+  return jsonRequestBody<User>("https://api.github.com/user", {
     headers: {
       Authorization: `Bearer ${token}`
     }
-  }).then(() => true, () => false);
+  });
+}
+
+export async function testToken(token: string) {
+  return getUserInfo(token).then(() => true, () => false);
 }
 
 let __githubTokenTmp: string;
+let __githubUserTmp: User;
 if (process.env.GITHUB_SECRET) __githubTokenTmp = process.env.GITHUB_SECRET;
 else if(process.env.GITHUB_TOKEN) __githubTokenTmp = process.env.GITHUB_TOKEN;
 else {
@@ -33,12 +39,19 @@ else {
   }
 }
 
-if (__githubTokenTmp) if (!(await testToken(__githubTokenTmp))) __githubTokenTmp = undefined;
+if (__githubTokenTmp) {
+  if (!(await getUserInfo(__githubTokenTmp).then(res => __githubUserTmp = res, () => false))) __githubTokenTmp = undefined;
+};
 
 /**
  * Github token from GITHUB_SECRET or GITHUB_TOKEN, or also from `gh` (if authenticated).
  */
-export const githubToken = __githubTokenTmp;
+export const githubToken = __githubTokenTmp||null;
+
+/**
+ * If githubToken is valid export user info, else set `null`.
+ */
+export const githubUserToken = __githubUserTmp||null;
 
 // Export types from Octokit
 export type rateLimitObject = Awaited<ReturnType<Octokit["rest"]["rateLimit"]["get"]>>["data"];

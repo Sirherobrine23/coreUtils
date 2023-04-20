@@ -1,10 +1,13 @@
 import { isIP } from "node:net";
 
 export class parseImage {
+  /**  Protocol schema example: http, https, docker */
+  protocolSchema = "http";
+
   /** service for scope */
   service?: string = "registry.docker.io";
 
-    /** Get token realm */
+  /** Get token realm */
   realm?: string = "https://auth.docker.io/token";
 
   /** Image registry, example: "**registry-1.docker.io**" */
@@ -30,9 +33,11 @@ export class parseImage {
     if (split.length === 1) {
       this.owner = "library";
       this.repo = split.at(0);
+      this.protocolSchema = "https";
     } else if (split.length === 2 && !(split.at(0).includes(":") || Boolean(isIP(split.at(0))) || (/^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]))\.([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$/).test(split.at(0)))) {
       this.owner = split.at(0);
       this.repo = split.at(1);
+      this.protocolSchema = "https";
     } else {
       this.service = this.realm = undefined;
       this.registry = split.shift();

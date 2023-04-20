@@ -1,5 +1,6 @@
-import path from "node:path";
 import { parseImage } from "./image.js";
+import stream from "node:stream";
+import path from "node:path";
 import http from "@sirherobrine23/http";
 
 export type tokenAction = "pull"|"push"|"pull,push";
@@ -18,7 +19,16 @@ function basicAuth(username: string, pass?: string) {
 }
 
 export class Auth {
-  constructor (public img: parseImage) {}
+  #auth: userAuth;
+  constructor (public img: parseImage, auth?: userAuth) {
+    if (auth) this.#auth = auth;
+  }
+  setAuth(auth: userAuth) {
+    if (!(auth.username && auth.password)) throw new Error("Set valid auth");
+    this.#auth = auth;
+    return this;
+  }
+
   #act: tokenAction = "pull";
   setAction(act: tokenAction) {
     if (act !== this.#act) this.access_token = this.expires_in = this.issued_at = this.token = undefined;
@@ -30,13 +40,6 @@ export class Auth {
 
   has(act: tokenAction) {
     return this.#act === act;
-  }
-
-  #auth: userAuth;
-  setAuth(auth: userAuth) {
-    if (!(auth.username && auth.password)) throw new Error("Set valid auth");
-    this.#auth = auth;
-    return this;
   }
 
   token: string;
@@ -68,21 +71,21 @@ export class Auth {
     return scopes;
   }
 
-  async request<T = any>(requestConfig: Omit<http.requestOptions, "body"|"url"> & {reqPath: string|(string[]), body?: () => any|Promise<any>}, scope?: string): Promise<http.dummyRequestResponse<T>> {
+  async request(requestConfig: Omit<http.requestOptions, "body"|"url"> & {reqPath: string|(string[]), body?: () => any|Promise<any>}, scope?: string): Promise<http.dummyRequestResponse<stream.Readable>> {
     let req: http.dummyRequestResponse;
     while (true) {
-      req = await http.dummyRequest<T>({
+      req = await http.dummyRequest({
         ...requestConfig,
         body: typeof requestConfig.body === "function" ? requestConfig.body() : undefined,
-        url: new URL(typeof requestConfig.reqPath === "string" ? requestConfig.reqPath : path.posix.join(...requestConfig.reqPath), `http://${this.img.registry}`),
+        url: new URL(typeof requestConfig.reqPath === "string" ? requestConfig.reqPath : path.posix.join(...requestConfig.reqPath), `${this.img.protocolSchema}://${this.img.registry}`),
         headers: {
           ...requestConfig.headers,
-          // ...(typeof this.access_token === "string" ? {Authorization: "Bearer "+this.access_token} : typeof this.token === "string" ? {Authorization: "Bearer "+this.token} : {}),
           ...(typeof this.token === "string" ? {Authorization: "Bearer "+this.token} : {}),
         },
       });
-      if (!(req.statusMessage === "write EPIPE" || req.statusMessage === "read ECONNRESET")) break;
+      if (!(req.statusMessage === "write EPIPE" || req.statusMessage === "Cannot call end after a stream was finished")) break;
     }
+    if (req.url) this.img.protocolSchema = (new URL(req.url)).protocol.replace(":", "");
 
     if (req.statusCode === 401) {
       scope ||= `repository:${this.img.owner}/${this.img.repo}:${this.#act}`;
@@ -106,7 +109,7 @@ export class Auth {
             ...(this.#auth?.username && this.#auth?.password ? {Authorization: basicAuth(this.#auth.username, this.#auth.password)} : {}),
           }
         });
-        if (!(auth.statusMessage === "write EPIPE" || auth.statusMessage === "read ECONNRESET")) break;
+        if (!(auth.statusMessage === "write EPIPE" || auth.statusMessage === "Cannot call end after a stream was finished")) break;
       }
 
       if (auth.statusCode !== 200) throw auth;
@@ -117,28 +120,28 @@ export class Auth {
       this.expires_in = expires_in;
       this.issued_at = issued_at;
       if (typeof expires_in === "number" && expires_in >= 1) setTimeout(() => this.token = undefined, expires_in);
-      let dumm: http.dummyRequestResponse;
       while (true) {
-        dumm = await http.dummyRequest<T>({
+        req = await http.dummyRequest({
           ...requestConfig,
           body: typeof requestConfig.body === "function" ? requestConfig.body() : undefined,
-          url: new URL(typeof requestConfig.reqPath === "string" ? requestConfig.reqPath : path.posix.join(...requestConfig.reqPath), `http://${this.img.registry}`),
+          url: new URL(typeof requestConfig.reqPath === "string" ? requestConfig.reqPath : path.posix.join(...requestConfig.reqPath), `${this.img.protocolSchema}://${this.img.registry}`),
           headers: {
             ...requestConfig.headers,
             Authorization: "Bearer "+(/*this.access_token||*/this.token),
           },
         });
-        if (!(dumm.statusMessage === "write EPIPE" || dumm.statusMessage === "read ECONNRESET")) break;
+        if (!(req.statusMessage === "write EPIPE" || req.statusMessage === "Cannot call end after a stream was finished")) break;
       }
-      if (dumm.statusCode === 401) {
-        this.access_token = this.expires_in = this.issued_at = this.token = undefined;
-        if (typeof dumm.headers["www-authenticate"] === "string") {
-          const scopes = this.#setScope(dumm.headers["www-authenticate"]);
-          if (scopes.scope) scope = scopes.scope;
-        }
-        return this.request(requestConfig, scope);
+      if (req.url) this.img.protocolSchema = (new URL(req.url)).protocol.replace(":", "");
+    }
+
+    if (req.statusCode === 401) {
+      this.access_token = this.expires_in = this.issued_at = this.token = undefined;
+      if (typeof req.headers["www-authenticate"] === "string") {
+        const scopes = this.#setScope(req.headers["www-authenticate"]);
+        if (scopes.scope) scope = scopes.scope;
       }
-      return dumm;
+      return this.request(requestConfig, scope);
     }
 
     return req;
@@ -147,18 +150,18 @@ export class Auth {
   async requestJSON<T = any>(requestConfig: Omit<http.requestOptions, "body"|"url"> & {reqPath: string|(string[]), body?: () => any|Promise<any>}, scope?: string): Promise<http.dummyRequestResponse<T>> {
     let req: http.dummyRequestResponse;
     while (true) {
-      req = await http.jsonDummyRequest<T>({
+      req = await http.jsonDummyRequest({
         ...requestConfig,
         body: typeof requestConfig.body === "function" ? requestConfig.body() : undefined,
-        url: new URL(typeof requestConfig.reqPath === "string" ? requestConfig.reqPath : path.posix.join(...requestConfig.reqPath), `http://${this.img.registry}`),
+        url: new URL(typeof requestConfig.reqPath === "string" ? requestConfig.reqPath : path.posix.join(...requestConfig.reqPath), `${this.img.protocolSchema}://${this.img.registry}`),
         headers: {
           ...requestConfig.headers,
-          // ...(typeof this.access_token === "string" ? {Authorization: "Bearer "+this.access_token} : typeof this.token === "string" ? {Authorization: "Bearer "+this.token} : {}),
           ...(typeof this.token === "string" ? {Authorization: "Bearer "+this.token} : {}),
         },
       });
-      if (!(req.statusMessage === "write EPIPE" || req.statusMessage === "read ECONNRESET")) break;
+      if (!(req.statusMessage === "write EPIPE" || req.statusMessage === "Cannot call end after a stream was finished")) break;
     }
+    if (req.url) this.img.protocolSchema = (new URL(req.url)).protocol.replace(":", "");
 
     if (req.statusCode === 401) {
       scope ||= `repository:${this.img.owner}/${this.img.repo}:${this.#act}`;
@@ -182,7 +185,7 @@ export class Auth {
             ...(this.#auth?.username && this.#auth?.password ? {Authorization: basicAuth(this.#auth.username, this.#auth.password)} : {}),
           }
         });
-        if (!(auth.statusMessage === "write EPIPE" || auth.statusMessage === "read ECONNRESET")) break;
+        if (!(auth.statusMessage === "write EPIPE" || auth.statusMessage === "Cannot call end after a stream was finished")) break;
       }
 
       if (auth.statusCode !== 200) throw auth;
@@ -193,28 +196,29 @@ export class Auth {
       this.expires_in = expires_in;
       this.issued_at = issued_at;
       if (typeof expires_in === "number" && expires_in >= 1) setTimeout(() => this.token = undefined, expires_in);
-      let dumm: http.dummyRequestResponse;
       while (true) {
-        dumm = await http.jsonDummyRequest<T>({
+        req = await http.jsonDummyRequest({
           ...requestConfig,
           body: typeof requestConfig.body === "function" ? requestConfig.body() : undefined,
-          url: new URL(typeof requestConfig.reqPath === "string" ? requestConfig.reqPath : path.posix.join(...requestConfig.reqPath), `http://${this.img.registry}`),
+          url: new URL(typeof requestConfig.reqPath === "string" ? requestConfig.reqPath : path.posix.join(...requestConfig.reqPath), `${this.img.protocolSchema}://${this.img.registry}`),
           headers: {
             ...requestConfig.headers,
             Authorization: "Bearer "+(/*this.access_token||*/this.token),
           },
         });
-        if (!(dumm.statusMessage === "write EPIPE" || dumm.statusMessage === "read ECONNRESET")) break;
+        if (!(req.statusMessage === "write EPIPE" || req.statusMessage === "Cannot call end after a stream was finished")) break;
       }
-      if (dumm.statusCode === 401) {
-        this.access_token = this.expires_in = this.issued_at = this.token = undefined;
-        if (typeof dumm.headers["www-authenticate"] === "string") {
-          const scopes = this.#setScope(dumm.headers["www-authenticate"]);
-          if (scopes.scope) scope = scopes.scope;
-        }
-        return this.request(requestConfig, scope);
+      if (req.url) this.img.protocolSchema = (new URL(req.url)).protocol.replace(":", "");
+    }
+
+    // Try again
+    if (req.statusCode === 401) {
+      this.access_token = this.expires_in = this.issued_at = this.token = undefined;
+      if (typeof req.headers["www-authenticate"] === "string") {
+        const scopes = this.#setScope(req.headers["www-authenticate"]);
+        if (scopes.scope) scope = scopes.scope;
       }
-      return dumm;
+      return this.requestJSON<T>(requestConfig, scope);
     }
 
     return req;

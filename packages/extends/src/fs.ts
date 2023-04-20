@@ -143,25 +143,6 @@ export async function readdirV2(folderPath: string, ...args: (boolean|filterCall
   return filesArray;
 }
 
-export async function createRandomFile(filePath: string, fileSize: number) {
-  if (fileSize < 0 || (isNaN(fileSize)||fileSize === Infinity)) throw new Error("Require positive file size and not Infinity");
-  const str = createWriteStream(filePath);
-  (new stream.Readable({
-    emitClose: true,
-    highWaterMark: 32,
-    read() {
-      if (fileSize > 0) {
-        const dtr = randomBytes(Math.min(32, fileSize));
-        fileSize = fileSize - dtr.byteLength;
-        return this.push(dtr);
-      }
-      return this.push(null);
-    },
-  })).pipe(str);
-  await finished(str);
-  return fs.lstat(filePath);
-}
-
 export async function readFile(filePath: string, start: number, end: number) {
   return new Promise<Buffer>((done, reject) => {
     let buf: Buffer[] = [];
@@ -170,4 +151,30 @@ export async function readFile(filePath: string, start: number, end: number) {
       buf = null;
     });
   });
+}
+
+export class randomBytesStream extends stream.Readable {
+  constructor(fileSize: number) {
+    super({
+      // highWaterMark: 256,
+      emitClose: false,
+      read(_size) {
+        if (fileSize > 0) {
+          // if (Math.max(0, Math.min(64, fileSize)) <= 0) return;
+          const dtr = randomBytes(Math.max(0, Math.min(Math.max(1, this.readableHighWaterMark), fileSize)));
+          fileSize = fileSize - dtr.byteLength;
+          if (!(this.closed||this.destroyed)) this.push(dtr);
+          return;
+        }
+        this.push(null);
+      },
+    });
+  }
+}
+
+export async function createRandomFile(filePath: string, fileSize: number) {
+  if (fileSize < 0 || (isNaN(fileSize)||fileSize === Infinity)) throw new Error("Require positive file size and not Infinity");
+  const str = createWriteStream(filePath);
+  await finished((new randomBytesStream(fileSize)).pipe(str));
+  return fs.lstat(filePath);
 }
