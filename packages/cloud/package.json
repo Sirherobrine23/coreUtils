@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/cloud",
-  "version": "3.6.4",
+  "version": "3.6.5",
   "description": "",
   "type": "module",
   "main": "src/index.js",
@@ -21,8 +21,8 @@
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
   "dependencies": {
-    "@sirherobrine23/extends": "3.6.4",
-    "@sirherobrine23/http": "3.6.4",
+    "@sirherobrine23/extends": "3.6.5",
+    "@sirherobrine23/http": "3.6.5",
     "chokidar": "^3.5.3",
     "googleapis": "^110.0.0",
     "oci-common": "^2.50.4",
