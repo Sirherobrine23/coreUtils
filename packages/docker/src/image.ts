@@ -70,19 +70,31 @@ export class parseImage {
   }
 }
 
-export type goSystem = Exclude<NodeJS.Platform, "win32"|"sunos">|"windows"|"solaris";
-export type goArch = Exclude<NodeJS.Architecture, "x64">|"amd64";
+/**
+ * knownOS is the list of past, present, and future known GOOS values.
+ */
+export type goSystem = "aix"|"android"|"darwin"|"dragonfly"|"freebsd"|"hurd"|"illumos"|"ios"|"js"|"linux"|"nacl"|"netbsd"|"openbsd"|"plan9"|"solaris"|"wasip1"|"windows"|"zos";
 
-const onGo = {
+/**
+ * knownArch is the list of past, present, and future known GOARCH values.
+ */
+export type goArch = "386"|"amd64"|"amd64p32"|"arm"|"armbe"|"arm64"|"arm64be"|"loong64"|"mips"|"mipsle"|"mips64"|"mips64le"|"mips64p32"|"mips64p32le"|"ppc"|"ppc64"|"ppc64le"|"riscv"|"riscv64"|"s390"|"s390x"|"sparc"|"sparc64"|"wasm";
+
+const onGo: {arch: {[arch in Exclude<NodeJS.Architecture, goArch>]?: goArch}, platform: {[platform in Exclude<NodeJS.Platform, goSystem>]?: goSystem}} = {
   arch: {
-    x64: "amd64"
+    x64: "amd64",
+    ia32: "386",
+    mipsel: "mipsle",
   },
   platform: {
+    sunos: "solaris",
     win32: "windows",
-    sunos: "solaris"
+    cygwin: "windows",
+    haiku: undefined,
   }
 }
-export function nodeToGO(target: keyof typeof onGo, src: string): string {
-  if (!onGo[target]) throw new TypeError("OK Google!");
-  return onGo[target][src] ?? src;
+
+export function nodeToGO<T extends keyof typeof onGo, D = T extends "arch" ? (NodeJS.Architecture) : (NodeJS.Platform)>(target: T, src: D): T extends "arch" ? (goArch) : (goSystem) {
+  if (!onGo[target]) throw new TypeError("Select platform or arch!");
+  return onGo[target][src as any] ?? src;
 }

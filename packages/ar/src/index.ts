@@ -203,112 +203,114 @@ export function parseArStream(): arParse {
   };
 }
 
+export class arStream extends stream.Readable {
+  #fileEntrys = new Map<string, fileInfo>();
+  #sendMagic = true;
+  constructor(callback?: (ar: arStream, callback?: (err?: any) => void) => void) {
+    super({read(){}, autoDestroy: true});
+    if (typeof callback === "function") {
+      if (callback.length === 1) {
+        Promise.resolve().then(() => callback(this)).then(() => this.finalize(), err => this.emit("error", err));
+      } else {
+        Promise.resolve().then(() => callback(this, (err) => {
+          if (err) this.emit("error", err);
+          this.finalize();
+        })).catch(err => this.emit("error", err));
+      }
+    }
+  }
+
+  /**
+   * Get files added in ar file
+   * @returns Files registred on stream
+   */
+  getFiles() {
+    return Array.from(this.#fileEntrys.keys()).reduce<{[fileName: string]: fileInfo}>((acc, fileName) => {
+      acc[fileName] = this.#fileEntrys.get(fileName);
+      return acc;
+    }, {});
+  }
+
+  /**
+   * Close redable stream
+   */
+  finalize() {
+    this.push(null);
+  }
+
+  #locked = false;
+  /**
+   * Get writable stream to add file in ar file
+   *
+   * @param fileName - file name
+   * @param fileInfo - file info to set in head
+   * @returns
+   */
+  addEntry(fileName: string, fileInfo: fileInfo): stream.Writable;
+  /**
+   *
+   * @param fileName - file name
+   * @param fileInfo - file info to set in head
+   * @param data - File Buffer os string
+   * @param encoding - optional data encoding
+   */
+  addEntry(fileName: string, fileInfo: fileInfo, data: string|Buffer, encoding?: BufferEncoding): void;
+  addEntry(fileName: string, fileInfo: fileInfo, data?: string|Buffer, encoding?: BufferEncoding): void|stream.Writable {
+    if (this.#fileEntrys.has(fileName)) throw new Error("File added in ar file");
+    else if (this.#locked) throw new Error("Fist end previus Writable stream!");
+    else if (this.closed) throw new Error("Stream closed not possible send new chuncks");
+    if (this.#sendMagic) {
+      this.#sendMagic = false;
+      // Send initial head
+      this.push(Buffer.from([0x21, 0x3C, 0x61, 0x72, 0x63, 0x68, 0x3E, 0x0A]), "binary");
+    }
+    const fileHead = createHead(fileName, fileInfo);
+    this.#fileEntrys.set(fileName, {...fileInfo});
+    const self = this;
+    this.push(fileHead, "binary");
+    if (typeof data === "string"||data instanceof Buffer) {
+      this.push(data, encoding);
+      this.#locked = false;
+      return;
+    }
+    return new stream.Writable({
+      autoDestroy: true,
+      emitClose: true,
+      write(chunk, encoding, callback) {
+        self.push(chunk, encoding);
+        callback();
+      },
+      destroy(error, callback) {
+       self.#locked = false;
+       if (error) self.destroy(error);
+       if (self.#fileEntrys.get(fileName).size & 1) self.push("\n", "utf8");
+        callback(error);
+      }
+    });
+  }
+
+  async addLocalFile(filePath: string) {
+    const stats = await fs.lstat(filePath);
+    if (stats.isDirectory()) throw new Error("Invalid file path, informed directory not file!");
+    await finished(createReadStream(filePath).pipe(this.addEntry(filePath, {
+      size: stats.size,
+      mode: stats.mode,
+      mtime: stats.mtime,
+      owner: stats.uid,
+      group: stats.gid
+    })));
+
+    return stats;
+  }
+}
+
 /**
  *
  * @param createdCallback - call before stream created
  * @returns
  */
-export function createArStream(callback?: (ar: ReturnType<typeof createArStream>, callback?: (err?: any) => void) => void) {
-  const fileEntrys = new Map<string, fileInfo>();
-  let sendMagic = true;
-  return new class arStream extends stream.Readable {
-    constructor() {
-      super({read(){}, autoDestroy: true});
-      if (typeof callback === "function") {
-        if (callback.length === 1) {
-          Promise.resolve().then(() => callback(this)).then(() => this.finalize(), err => this.emit("error", err));
-        } else {
-          Promise.resolve().then(() => callback(this, (err) => {
-            if (err) this.emit("error", err);
-            this.finalize();
-          })).catch(err => this.emit("error", err));
-        }
-      }
-    }
-
-    /**
-     * Get files added in ar file
-     * @returns Files registred on stream
-     */
-    getFiles() {
-      return Array.from(fileEntrys.keys()).reduce<{[fileName: string]: fileInfo}>((acc, fileName) => {
-        acc[fileName] = fileEntrys.get(fileName);
-        return acc;
-      }, {});
-    }
-
-    /**
-     * Close redable stream
-     */
-    finalize() {
-      this.push(null);
-    }
-
-    #locked = false;
-    /**
-     * Get writable stream to add file in ar file
-     *
-     * @param fileName - file name
-     * @param fileInfo - file info to set in head
-     * @returns
-     */
-    addEntry(fileName: string, fileInfo: fileInfo): stream.Writable;
-    /**
-     *
-     * @param fileName - file name
-     * @param fileInfo - file info to set in head
-     * @param data - File Buffer os string
-     * @param encoding - optional data encoding
-     */
-    addEntry(fileName: string, fileInfo: fileInfo, data: string|Buffer, encoding?: BufferEncoding): void;
-    addEntry(fileName: string, fileInfo: fileInfo, data?: string|Buffer, encoding?: BufferEncoding): void|stream.Writable {
-      if (fileEntrys.has(fileName)) throw new Error("File added in ar file");
-      else if (this.#locked) throw new Error("Fist end previus Writable stream!");
-      else if (this.closed) throw new Error("Stream closed not possible send new chuncks");
-      if (sendMagic) {
-        sendMagic = false;
-        // Send initial head
-        this.push(Buffer.from([0x21, 0x3C, 0x61, 0x72, 0x63, 0x68, 0x3E, 0x0A]), "binary");
-      }
-      const fileHead = createHead(fileName, fileInfo);
-      fileEntrys.set(fileName, {...fileInfo});
-      const self = this;
-      this.push(fileHead, "binary");
-      if (typeof data === "string"||data instanceof Buffer) {
-        this.push(data, encoding);
-        this.#locked = false;
-        return;
-      }
-      return new stream.Writable({
-        autoDestroy: true,
-        emitClose: true,
-        write(chunk, encoding, callback) {
-          self.push(chunk, encoding);
-          callback();
-        },
-        destroy(error, callback) {
-         self.#locked = false;
-         if (error) self.destroy(error);
-         if (fileEntrys.get(fileName).size & 1) self.push("\n", "utf8");
-          callback(error);
-        }
-      });
-    }
-
-    async addLocalFile(filePath: string) {
-      const stats = await fs.lstat(filePath);
-      if (stats.isDirectory()) throw new Error("Invalid file path, informed directory not file!");
-      await finished(createReadStream(filePath).pipe(this.addEntry(filePath, {
-        size: stats.size,
-        mode: stats.mode,
-        mtime: stats.mtime,
-        owner: stats.uid,
-        group: stats.gid
-      })));
-
-      return stats;
-    }
-  }
+export function createArStream(callback?: (ar: arStream, callback?: (err?: any) => void) => void) {
+  return new arStream(callback);
 }
 
 /**

@@ -41,8 +41,15 @@ export interface debianControl {
   Filename?: string,
 };
 
-const archTest = ["all", "armhf", "i386", "ia64", "alpha", "amd64", "arc", "armeb", "arm", "arm64", "avr32", "hppa", "m32r", "m68k", "mips", "mipsel", "mipsr6", "mipsr6el", "mips64", "mips64el", "mips64r6", "mips64r6el", "nios2", "or1k", "powerpc", "powerpcel", "ppc64", "ppc64el", "riscv64", "s390", "s390x", "sh3", "sh3eb", "sh4", "sh4eb", "sparc", "sparc64", "tilegx"];
+// Archs array
+const archTest = ["all", "armhf", "armel", "mipsn32", "mipsn32el", "mipsn32r6", "mipsn32r6el", "mips64", "mips64el", "mips64r6", "mips64r6el", "powerpcspe", "x32", "arm64ilp32", "i386", "ia64", "alpha", "amd64", "arc", "armeb", "arm", "arm64", "avr32", "hppa", "m32r", "m68k", "mips", "mipsel", "mipsr6", "mipsr6el", "nios2", "or1k", "powerpc", "powerpcel", "ppc64", "ppc64el", "riscv64", "s390", "s390x", "sh3", "sh3eb", "sh4", "sh4eb", "sparc", "sparc64", "tilegx"];
 
+/**
+ * Parse `control` file and return Object with package config.
+ *
+ * @param controlString - Buffer os String debian control file.
+ * @returns
+ */
 export function parseControl<T extends debianControl = debianControl>(controlString: string|Buffer): T {
   if (Buffer.isBuffer(controlString)) controlString = controlString.toString("utf8");
   let lineSplit = controlString.trim().split("\n");
@@ -64,7 +71,7 @@ export function parseControl<T extends debianControl = debianControl>(controlStr
       }
     }
   }
-  const reduced = lineSplit.reduce<T>((acc, line) => {
+  const controlConfig = lineSplit.reduce<T>((acc, line) => {
     const indexOf = line.indexOf(":");
     let key: keyof debianControl;
     acc[(key = line.slice(0, indexOf).trim() as any)] = line.slice(indexOf+1).trim();
@@ -92,47 +99,47 @@ export function parseControl<T extends debianControl = debianControl>(controlStr
     }
     return acc;
   }, {} as any);
-  if (!(reduced.Package && reduced.Architecture && reduced.Version && reduced.Maintainer && reduced.Description)) throw new Error("Control file is invalid");
-  if (!(archTest.includes(reduced.Architecture))) throw new Error("Invalid package architecture!");
-  return reduced;
+  if (!(controlConfig.Package && controlConfig.Architecture && controlConfig.Version && controlConfig.Maintainer && controlConfig.Description)) throw new Error("Control file is invalid");
+  if (!(archTest.includes(controlConfig.Architecture))) throw new Error("Invalid package architecture!");
+  return controlConfig;
 }
 
 function keys<T>(obj: T): (keyof T)[] {
   return Object.keys(obj) as any;
 }
 
-export function createControl(controlObject: debianControl) {
-  if (!(controlObject.Package && controlObject.Architecture && controlObject.Version)) throw new Error("Control is invalid");
+/**
+ * Create control file from Object and and set if valid control Object.
+ *
+ * @param controlObject - Control object.
+ */
+export function createControl(controlConfig: debianControl) {
+  if (!(controlConfig.Package && controlConfig.Architecture && controlConfig.Version && controlConfig.Maintainer && controlConfig.Description)) throw new Error("Control file is invalid");
+  if (!(archTest.includes(controlConfig.Architecture))) throw new Error("Invalid package architecture!");
   let controlFile: string[] = [];
-  const desc = controlObject.Description;
-  delete controlObject.Description;
-  controlObject.Description = desc;
-  for (const keyName of keys(controlObject)) {
+  const desc = controlConfig.Description;
+  delete controlConfig.Description;
+  controlConfig.Description = desc;
+  keys(controlConfig).forEach(keyName => {
     let keyString = keyName + ": ";
-    let data = controlObject[keyName];
-    if (data === undefined||data === null||data === "") continue;
-    if (keyName === "Description") {
-      if (typeof data !== "string") throw new TypeError("Description must be a string");
-      else {
-        controlFile.push(keyString+(data.split("\n").map((line, index) => {
-          line = line.trim();
-          if (index === 0) return line.trim();
-          if (line.length < 1 || line === ".") return  ` .`;
-          return ` ${line.trimEnd()}`;
-        }).join("\n").trim()));
-      }
+    if (controlConfig[keyName] === undefined||controlConfig[keyName] === null||controlConfig[keyName] === "") return;
+    else if (keyName === "Description") {
+      controlFile.push(keyString+(controlConfig[keyName].trim().split("\n").map((line, index) => {
+        if (index === 0) return line.trim();
+        if ((line = line.trimEnd()).length === 0 || line === ".") return  ` .`;
+        return ` ${line.trimEnd()}`;
+      }).join("\n").trim()));
     } else if (keyName === "Maintainer"||keyName === "Original-Maintainer") {
-      const { Name, Email } = controlObject[keyName];
-      controlFile.push(keyString+`${Name} <${Email}>`);
+      const { Name, Email } = controlConfig[keyName];
+      if (!Email) controlFile.push(keyString+Name); else controlFile.push(keyString+`${Name} <${Email}>`);
     } else {
+      const data = controlConfig[keyName];
       if (typeof data === "boolean") keyString += data ? "yes" : "no";
       else if (Array.isArray(data)) keyString += data.join(", ");
       else keyString += String(data);
       controlFile.push(keyString);
     }
-  }
-
-  // Add break line to end
+  });
   return controlFile.join("\n");
 }
 
