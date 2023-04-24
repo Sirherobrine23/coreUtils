@@ -10,6 +10,7 @@ updates:
   directory: /
   schedule:
     interval: weekly
-    timezone: "12:00 UTC-3"
+    timezone: "America/Sao_Paulo"
+    time: "12:00"
   assignees:
     - Sirherobrine23
