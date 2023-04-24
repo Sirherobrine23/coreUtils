@@ -19,13 +19,13 @@ export interface dockerPlatform {
   variant?: string;
 }
 
-/** Debian packages, get from `dpkg-architecture --list -L | grep 'musl-linux-' | sed 's|musl-linux-||g' | xargs`, version 1.21.1, Ubuntu */
+/** Debian packages arch's */
 export type debianArch = "all"|"armhf"|"armel"|"mipsn32"|"mipsn32el"|"mipsn32r6"|"mipsn32r6el"|"mips64"|"mips64el"|"mips64r6"|"mips64r6el"|"powerpcspe"|"x32"|"arm64ilp32"|"i386"|"ia64"|"alpha"|"amd64"|"arc"|"armeb"|"arm"|"arm64"|"avr32"|"hppa"|"m32r"|"m68k"|"mips"|"mipsel"|"mipsr6"|"mipsr6el"|"nios2"|"or1k"|"powerpc"|"powerpcel"|"ppc64"|"ppc64el"|"riscv64"|"s390"|"s390x"|"sh3"|"sh3eb"|"sh4"|"sh4eb"|"sparc"|"sparc64"|"tilegx";
-export function debianControlToDockerPlatform(Architecture: debianArch, variant: "linux"|"android" = "linux"): dockerPlatform {
+export function debianArchToDockerPlatform(Architecture: debianArch, variant: "linux"|"android" = "linux"): dockerPlatform {
   const platform: dockerPlatform = {os: variant||"linux", architecture: Architecture as any};
   if (Architecture === "all") platform.architecture = "amd64";
   else if (Architecture === "amd64") platform.architecture = "amd64";
-  else if (Architecture === "i386") platform.architecture = "ia32";
+  else if (Architecture === "i386") platform.architecture = "386";
   else if (Architecture === "arm64") {
     platform.architecture = "arm64";
     platform.variant = "v8";
@@ -37,8 +37,9 @@ export function debianControlToDockerPlatform(Architecture: debianArch, variant:
     platform.variant = "v6"
   } else if (Architecture === "s390") platform.architecture = "s390";
   else if (Architecture === "s390x") platform.architecture = "s390x";
-  else if (Architecture === "ppc64"||Architecture === "ppc64el") platform.architecture = "ppc64";
-  else if (Architecture === "mipsel") platform.architecture = "mipsel";
+  else if (Architecture === "ppc64") platform.architecture = "ppc64";
+  else if (Architecture === "ppc64el") platform.architecture = "ppc64le";
+  else if (Architecture === "mipsel") platform.architecture = "mipsle";
   else if (Architecture === "mips") platform.architecture = "mips";
   return platform;
 }
