@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/ar",
-  "version": "3.6.5",
+  "version": "3.6.6",
   "description": "Extract and create Ar file with stream or directly file.",
   "type": "module",
   "main": "src/index.js",
@@ -30,7 +30,9 @@
     "postpack": "tsc --build --clean"
   },
   "dependencies": {
-    "@sirherobrine23/extends": "3.6.5"
+    "@sirherobrine23/extends": "3.6.6"
   },
-  "workspaces": ["../*"]
+  "workspaces": [
+    "../*"
+  ]
 }
