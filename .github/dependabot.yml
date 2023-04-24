@@ -9,6 +9,7 @@ updates:
 - package-ecosystem: npm
   directory: /
   schedule:
-    interval: monthly
+    interval: weekly
+    timezone: "12:00 UTC-3"
   assignees:
     - Sirherobrine23

@@ -1,7 +1,7 @@
 {
   "name": "@sirherobrine23/docker-registry",
   "version": "3.6.5",
-  "description": "Maneger package/image registry",
+  "description": "docker/OCI registry Publish and Pull images directly nodejs.",
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
@@ -14,7 +14,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
+    "url": "git+https://github.com/Sirherobrine23/coreUtils.git",
+    "directory": "packages/docker"
   },
   "bugs": {
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
@@ -30,5 +31,6 @@
   },
   "devDependencies": {
     "@types/tar-stream": "^2.2.2"
-  }
+  },
+  "workspaces": ["../*"]
 }

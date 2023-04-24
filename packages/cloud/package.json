@@ -1,15 +1,19 @@
 {
   "name": "@sirherobrine23/cloud",
   "version": "3.6.5",
-  "description": "",
+  "description": "Multi cloud maneger and API simplify",
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
+  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
+  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
+  "license": "GPL-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
+    "url": "git+https://github.com/Sirherobrine23/coreUtils.git",
+    "directory": "packages/cloud"
   },
-  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
+  "keywords": [],
   "bugs": {
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
   },
@@ -17,15 +21,17 @@
     "prepack": "tsc --build --clean && tsc --build",
     "postpack": "tsc --build --clean"
   },
-  "keywords": [],
-  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
-  "license": "GPL-2.0",
   "dependencies": {
+    "@googleapis/drive": "^5.0.2",
     "@sirherobrine23/extends": "3.6.5",
     "@sirherobrine23/http": "3.6.5",
     "chokidar": "^3.5.3",
-    "googleapis": "^110.0.0",
-    "oci-common": "^2.50.4",
+    "google-auth-library": "^8.7.0",
+    "oci-common": "^2.57.0",
     "oci-objectstorage": "^2.57.0"
-  }
+  },
+  "workspaces": [
+    "../extends",
+    "../http"
+  ]
 }

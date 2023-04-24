@@ -1,26 +1,36 @@
 {
   "name": "@sirherobrine23/ar",
   "version": "3.6.5",
-  "description": "",
+  "description": "Extract and create Ar file with stream or directly file.",
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
+  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
+  "license": "GPL-2.0",
+  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
+  "keywords": [
+    "stream",
+    "local",
+    "ar",
+    "linux",
+    "macos",
+    "windows"
+  ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
+    "url": "git+https://github.com/Sirherobrine23/coreUtils.git",
+    "directory": "packages/ar"
   },
-  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
   "bugs": {
-    "url": "https://github.com/Sirherobrine23/coreUtils/issues"
+    "url": "https://github.com/Sirherobrine23/coreUtils/issues",
+    "email": "srherobrine20@gmail.com"
   },
   "scripts": {
     "prepack": "tsc --build --clean && tsc --build",
     "postpack": "tsc --build --clean"
   },
-  "keywords": [],
   "dependencies": {
     "@sirherobrine23/extends": "3.6.5"
   },
-  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
-  "license": "GPL-2.0"
+  "workspaces": ["../*"]
 }

@@ -7,7 +7,8 @@
   "types": "src/index.d.ts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
+    "url": "git+https://github.com/Sirherobrine23/coreUtils.git",
+    "directory": "packages/http"
   },
   "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
   "bugs": {
@@ -36,5 +37,6 @@
     "@types/jsdom": "^21.1.1",
     "@types/tar": "^6.1.4",
     "@types/tar-stream": "^2.2.2"
-  }
+  },
+  "workspaces": ["../*"]
 }

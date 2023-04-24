@@ -1,23 +1,29 @@
 {
   "name": "@sirherobrine23/extends",
   "version": "3.6.5",
-  "description": "",
+  "description": "Extends nodejs APIs to Promises and new functions",
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
+  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
+  "license": "GPL-2.0",
+  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
+  "keywords": [
+    "promises",
+    "node",
+    "file system",
+    "crypto"
+  ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
+    "url": "git+https://github.com/Sirherobrine23/coreUtils.git",
+    "directory": "packages/extends"
   },
-  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
   "bugs": {
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
   },
   "scripts": {
     "prepack": "tsc --build --clean && tsc --build",
     "postpack": "tsc --build --clean"
-  },
-  "keywords": [],
-  "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
-  "license": "GPL-2.0"
+  }
 }

@@ -1,37 +1,11 @@
-import { drive_v3, google } from "googleapis";
+import { drive, drive_v3 } from "@googleapis/drive";
+import { OAuth2Client } from "google-auth-library";
 import { createServer } from "node:http";
-import { ReadStream } from "node:fs"
 import stream from "node:stream";
 
-// Google Credential
-export type googleCredential = {
-  /**
-   * This field is only present if the access_type parameter was set to offline in the authentication request. For details, see Refresh tokens.
-   */
-  refresh_token?: string | null;
-  /**
-   * The time in ms at which this token is thought to expire.
-   */
-  expiry_date?: number | null;
-  /**
-   * A token that can be sent to a Google API.
-   */
-  access_token?: string | null;
-  /**
-   * Identifies the type of token returned. At this time, this field always has the value Bearer.
-   */
-  token_type?: string | null;
-  /**
-   * A JWT that contains identity information about the user that is digitally signed by Google.
-   */
-  id_token?: string | null;
-  /**
-   * The scopes of access granted by the access_token expressed as a list of space-delimited, case-sensitive strings.
-   */
-  scope?: string;
-};
-
-export type googleFileList = {
+/** Google Credential */
+export type googleCredential = Parameters<OAuth2Client["setCredentials"]>[0];
+export type googleFile = {
   id: string,
   name: string,
   size: number,
@@ -43,6 +17,26 @@ export type googleFileList = {
     modified: Date,
   }
 };
+
+export interface fileUpload extends stream.Writable {
+  on(event: "close", listener: () => void): this;
+  on(event: "drain", listener: () => void): this;
+  on(event: "error", listener: (err: Error) => void): this;
+  on(event: "finish", listener: () => void): this;
+  on(event: "pipe", listener: (src: stream.Readable) => void): this;
+  on(event: "unpipe", listener: (src: stream.Readable) => void): this;
+  on(event: "gfile", listener: (fileInfo: googleFile) => void): this;
+  on(event: string | symbol, listener: (...args: any[]) => void): this;
+
+  once(event: "close", listener: () => void): this;
+  once(event: "drain", listener: () => void): this;
+  once(event: "error", listener: (err: Error) => void): this;
+  once(event: "finish", listener: () => void): this;
+  once(event: "pipe", listener: (src: stream.Readable) => void): this;
+  once(event: "unpipe", listener: (src: stream.Readable) => void): this;
+  once(event: "gfile", listener: (fileInfo: googleFile) => void): this;
+  once(event: string | symbol, listener: (...args: any[]) => void): this;
+}
 
 // Options object
 export type googleOptions = {
@@ -59,7 +53,7 @@ async function createAuth(options: googleOptions) {
   else if (!clientSecret) throw new Error("Required Google Client Secret");
 
   // Oauth2
-  let auth = new google.auth.OAuth2(clientID, clientSecret);
+  let auth = new OAuth2Client(clientID, clientSecret);
   if (token) auth.setCredentials(token);
   else {
     await new Promise<void>((done, reject) => {
@@ -90,7 +84,7 @@ async function createAuth(options: googleOptions) {
       }).listen(0, async () => {
         const { port } = server.address() as any;
         auth = null;
-        auth = new google.auth.OAuth2(clientID, clientSecret, `http://localhost:${port}`);
+        auth = new OAuth2Client(clientID, clientSecret, `http://localhost:${port}`);
         const url = auth.generateAuthUrl({
           access_type: "offline",
           scope: ["https://www.googleapis.com/auth/drive"],
@@ -113,7 +107,7 @@ async function createAuth(options: googleOptions) {
 export async function GoogleDriver(options: googleOptions) {
   const { oauth = await createAuth(options) } = options;
   // Google Driver API
-  const { files } = google.drive({version: "v3", auth: oauth});
+  const { files } = drive({version: "v3", auth: oauth});
 
   /**
    * Get files and folder list array from folder
@@ -121,8 +115,8 @@ export async function GoogleDriver(options: googleOptions) {
    * @param folderID - ID of the folder
    * @returns
    */
-  async function listFiles(folderID?: string, recursiveBreak = false): Promise<googleFileList[]> {
-    // const mainData: googleFileList[] = [];
+  async function listFiles(folderID?: string, recursiveBreak = false): Promise<googleFile[]> {
+    // const mainData: googleFile[] = [];
     const data: (drive_v3.Schema$File & {childreen?: drive_v3.Schema$File[]})[] = [];
     let nextPageToken: string;
     while (true) {
@@ -163,33 +157,48 @@ export async function GoogleDriver(options: googleOptions) {
     return (await files.get({alt: "media", fileId: fileID}, {responseType: "stream"})).data;
   }
 
-  async function uploadFile(fileName: string, fileStream: ReadStream|stream.Readable|Buffer|string, folderID?: string): Promise<googleFileList> {
-    const { data: info } = await files.create({
-      fields: "id, name, size, trashed, createdTime, modifiedTime, originalFilename, parents, mimeType",
-      requestBody: {
-        name: fileName,
-        ...(folderID ? {parents: [folderID]} : {}),
-      },
-      media: {
-        mimeType: "application/octet-stream",
-        body: fileStream,
-      },
-    });
-    return {
-      id: info.id,
-      name: info.originalFilename ?? info.name,
-      size: Number(info.size ?? 0),
-      isTrashedFile: info.trashed,
-      type: info.mimeType === "application/vnd.google-apps.folder" ? "folder" : "file",
-      parent: info.parents.at(-1),
-      Dates: {
-        created: new Date(info.createdTime ?? 0),
-        modified: new Date(info.modifiedTime ?? 0)
+  /**
+   * Upload file to Google drive
+   *
+   * to get file info watch `gfile` event to get `googleFile` object
+   *
+   * @param fileName - File name
+   * @param folderID - folder id if set to folder - optional
+   */
+  function uploadFile(fileName: string, folderID?: string): fileUpload {
+    return new class fileUpload extends stream.PassThrough {
+      constructor() {
+        super({autoDestroy: true, emitClose: true});
+        files.create({
+          fields: "id, name, size, trashed, createdTime, modifiedTime, originalFilename, parents, mimeType",
+          requestBody: {
+            name: fileName,
+            ...(folderID ? {parents: [folderID]} : {}),
+          },
+          media: {
+            mimeType: "application/octet-stream",
+            body: stream.Readable.from(this),
+          },
+        }).then(({data: info}) => {
+          const data: googleFile = {
+            id: info.id,
+            name: info.originalFilename ?? info.name,
+            size: Number(info.size ?? 0),
+            isTrashedFile: info.trashed,
+            type: info.mimeType === "application/vnd.google-apps.folder" ? "folder" : "file",
+            parent: info.parents.at(-1),
+            Dates: {
+              created: new Date(info.createdTime ?? 0),
+              modified: new Date(info.modifiedTime ?? 0)
+            }
+          }
+          this.emit("gfile", data);
+        }, err => this.emit("error", err));
       }
-    };
+    }
   }
 
-  async function deleteFile(id: string): Promise<googleFileList> {
+  async function deleteFile(id: string): Promise<googleFile> {
     const info = await files.get({
       fileId: id,
       fields: "id, name, size, trashed, createdTime, modifiedTime, originalFilename, parents, mimeType",

@@ -1,11 +1,9 @@
 import * as ociBucket from "oci-objectstorage";
 import * as ociAuth from "oci-common";
-import * as coreHttp from "@sirherobrine23/http";
+import { createReadStream, createWriteStream, promises as fs } from "node:fs";
 import extendsFS from "@sirherobrine23/extends";
-import { createReadStream, createWriteStream, ReadStream, promises as fs } from "node:fs";
 import chokidar from "chokidar";
 import stream from "node:stream";
-import utils from "node:util";
 import path from "node:path";
 
 export type oracleRegions = "af-johannesburg-1"|"ap-chuncheon-1"|"ap-hyderabad-1"|"ap-melbourne-1"|"ap-mumbai-1"|"ap-osaka-1"|"ap-seoul-1"|"ap-singapore-1"|"ap-sydney-1"|"ap-tokyo-1"|"ca-montreal-1"|"ca-toronto-1"|"eu-amsterdam-1"|"eu-frankfurt-1"|"eu-madrid-1"|"eu-marseille-1"|"eu-milan-1"|"eu-paris-1"|"eu-stockholm-1"|"eu-zurich-1"|"il-jerusalem-1"|"me-abudhabi-1"|"me-jeddah-1"|"mx-queretaro-1"|"sa-santiago-1"|"sa-saopaulo-1"|"sa-vinhedo-1"|"uk-cardiff-1"|"uk-london-1"|"us-ashburn-1"|"us-chicago-1"|"us-phoenix-1"|"us-sanjose-1";
@@ -13,16 +11,12 @@ export type oracleOptions = {
   region: oracleRegions,
   namespace: string,
   name: string,
-  auth: {
-    type: "user"
+  auth?: {
     tenancy: string,
     user: string,
     fingerprint: string,
     privateKey: string,
     passphase?: string,
-  }|{
-    type: "preAuthentication",
-    PreAuthenticatedKey: string,
   }
 }
 
@@ -63,31 +57,6 @@ function getRegion(region: oracleRegions) {
   else throw new Error("Invalid Oracle Cloud region");
 }
 
-function checkFileName(name: string) {
-  if (!name) throw new Error("File name is required");
-  else if (typeof name !== "string") throw new Error("File name must be a string");
-  else if (name.length > 1024) throw new Error("File name must be less than 1024 characters");
-  else if (name.length < 1) throw new Error("File name must be at least 1 character");
-  return name;
-}
-
-function fixDir(filePath: string) {
-  filePath = path.posix.normalize(path.posix.join("/", filePath));
-  if (filePath.startsWith("/")) filePath = filePath.slice(1);
-  return filePath;
-}
-
-type oracleFileListObjectinternal = {
-  "name": string,
-  "size"?: number,
-  "timeCreated"?: string,
-  "timeModified"?: string,
-  "etag"?: string,
-  "storageTier"?: "Standard"|"InfrequentAccess"|"Archive",
-  "archivalState"?: "Archived"|"Restoring"|"Restored",
-  "md5"?: string
-};
-
 export type oracleFileListObject = {
   name: string,
   size: number,
@@ -113,185 +82,75 @@ export type oracleBucket = {
 /**
  * Create object with functions to manage files in Oracle cloud bucket
  */
-export async function oracleBucket(config: oracleOptions): Promise<oracleBucket> {
+export async function oracleBucket(config: oracleOptions) {
   const partialFunctions: Partial<oracleBucket> = {};
-  if (config.auth.type === "preAuthentication") {
-    if (!config.auth.PreAuthenticatedKey) throw new Error("PreAuthenticatedKey is required");
-    getRegion(config.region);
-    const baseURL = utils.format("https://objectstorage.%s.oraclecloud.com/p/%s/n/%s/b/%s", config.region, config.auth.PreAuthenticatedKey, config.namespace, config.name);
+  new ociAuth.SessionAuthDetailProvider()
+  const client = new ociBucket.ObjectStorageClient({
+    authenticationDetailsProvider: config.auth ? new ociAuth.SessionAuthDetailProvider() : new ociAuth.SimpleAuthenticationDetailsProvider(
+      config.auth.tenancy,
+      config.auth.user,
+      config.auth.fingerprint,
+      config.auth.privateKey,
+      config.auth.passphase||null,
+      getRegion(config.region)
+    )
+  });
 
-    partialFunctions.uploadFile = async function uploadFile(fileName: string, fileStream: string|Buffer|stream.Readable, storageTier?: "Standard"|"InfrequentAccess"|"Archive") {
-      if (!!storageTier) if (!(["Standard", "InfrequentAccess", "Archive"]).includes(storageTier)) storageTier = undefined;
-      let size = -1;
-      if (typeof (fileName as any as ReadStream).pipe === "function") {
-        const data = (fileName as any as ReadStream)?.[Symbol("kFs")];
-        if (!!data) {
-          try {
-            let nSize = data.lstatSync()?.size;
-            if (typeof nSize === "number" && !isNaN(nSize)) size = nSize;
-          } catch {}
-        }
-      }
-      await coreHttp.bufferRequest(utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(fileName)))), {
-        method: "PUT",
-        body: fileStream,
-        disableHTTP2: true,
-        headers: {
-          ...(size > -1 ? {
-            "Content-Length": String(size),
-          } : {}),
-          ...(!!storageTier ? {
-            "storage-tier": storageTier,
-          } : {}),
-          // "Content-Type": "application/x-directory",
-          // "opc-meta-virtual-folder-directory-object": "true",
-          "Content-Type": "application/octet-stream",
-        }
-      });
-    }
-
-     partialFunctions.deleteFile = async function deleteFile(pathLocation: string) {
-      await coreHttp.bufferRequest(utils.format("%s/o/%s", baseURL, encodeURIComponent(fixDir(checkFileName(pathLocation)))), {
-        method: "DELETE"
-      });
-    }
-
-    partialFunctions.listFiles = async function listFiles(folder: string = "") {
-      folder = fixDir(folder);
-      const data: oracleFileListObject[] = [];
-      let startAfter: string;
-      while (true) {
-        const response = await coreHttp.jsonRequest<{nextStartWith?: string, objects: oracleFileListObjectinternal[]}>(utils.format("%s/o", baseURL), {
-          method: "GET",
-          query: {
-            limit: 1000,
-            fields: "name,size,etag,timeCreated,md5,timeModified,storageTier,archivalState",
-            prefix: folder ?? "",
-            startAfter: startAfter ?? "",
-          }
-        });
-        response.body.objects.forEach(item => data.push({
-          name: item.name,
-          size: item.size,
-          etag: item.etag,
-          storageTier: item.storageTier,
-          md5: item.md5,
-          getFile: () => partialFunctions!.getFileStream(item.name),
-          Dates: {
-            Created: new Date(item.timeCreated),
-            Modified: new Date(item.timeModified)
-          }
-        }));
-        if (!(startAfter = response.body.nextStartWith)) break;
-      }
-      return data;
-    }
-
-    partialFunctions.getFileStream = async function getFileStream(pathLocation: string): Promise<stream.Readable> {
-      const response = await coreHttp.streamRequest(utils.format("%s/o/%s", baseURL, fixDir(checkFileName(pathLocation))), {
-        method: "GET"
-      });
-      return response;
-    }
-
-    // async function renameFile(currentName: string, newName: string) {
-    //   await coreHttp.bufferRequest({
-    //     method: "POST",
-    //     url: utils.format("%s/actions/renameObject", baseURL),
-    //     headers: {
-    //       "Content-Type": "application/json",
-    //     },
-    //     body: JSON.stringify({
-    //       sourceName: checkFileName(currentName),
-    //       newName: checkFileName(newName),
-    //       srcObjIfMatchETag: "*",
-    //       newObjIfMatchETag: "*",
-    //       newObjIfNoneMatchETag: "*"
-    //     })
-    //   });
-    // }
-
-    partialFunctions.updateTier = async function updateTier(filePath: string, storageTier: "Standard"|"InfrequentAccess"|"Archive") {
-      if (!(["Standard", "InfrequentAccess", "Archive"]).includes(storageTier)) throw new TypeError("Invalid storage tier");
-      await coreHttp.bufferRequest(utils.format("%s/actions/updateObjectStorageTier", baseURL), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: {
-          objectName: fixDir(checkFileName(filePath)),
-          storageTier,
-        }
-      });
-    }
-  } else {
-    const client = new ociBucket.ObjectStorageClient({
-      authenticationDetailsProvider: new ociAuth.SimpleAuthenticationDetailsProvider(
-        config.auth.tenancy,
-        config.auth.user,
-        config.auth.fingerprint,
-        config.auth.privateKey,
-        config.auth.passphase||null,
-        getRegion(config.region)
-      )
+  partialFunctions.uploadFile = async function uploadFile(fileName: string, fileStream: string|Buffer|stream.Readable) {
+    await client.putObject({
+      namespaceName: config.namespace,
+      bucketName: config.name,
+      objectName: fileName,
+      putObjectBody: fileStream,
     });
+  }
 
-    partialFunctions.uploadFile = async function uploadFile(fileName: string, fileStream: string|Buffer|stream.Readable) {
-      await client.putObject({
+  partialFunctions.deleteFile = async function deleteFile(pathLocation: string) {
+    await client.deleteObject({
+      namespaceName: config.namespace,
+      bucketName: config.name,
+      objectName: pathLocation
+    });
+  }
+
+  partialFunctions.listFiles = async function listFiles(folder?: string) {
+    const objects: oracleFileListObject[] = [];
+    let start: any;
+    while (true) {
+      const { listObjects } = await client.listObjects({
         namespaceName: config.namespace,
         bucketName: config.name,
-        objectName: fileName,
-        putObjectBody: fileStream,
+        fields: "name,size,etag,timeCreated,md5,timeModified,storageTier,archivalState" as any,
+        prefix: folder,
+        startAfter: start,
       });
+      listObjects.objects.forEach(item => objects.push({
+        name: item.name,
+        size: item.size,
+        etag: item.etag,
+        storageTier: item.storageTier as any,
+        md5: item.md5,
+        getFile: () => partialFunctions!.getFileStream(item.name),
+        Dates: {
+          Created: new Date(item.timeCreated),
+          Modified: new Date(item.timeModified)
+        }
+      }))
+      if (!(start = listObjects.nextStartWith)) break;
     }
 
-    partialFunctions.deleteFile = async function deleteFile(pathLocation: string) {
-      await client.deleteObject({
-        namespaceName: config.namespace,
-        bucketName: config.name,
-        objectName: pathLocation
-      });
-    }
+    return objects;
+  }
 
-    partialFunctions.listFiles = async function listFiles(folder?: string) {
-      const objects: oracleFileListObject[] = [];
-      let start: any;
-      while (true) {
-        const { listObjects } = await client.listObjects({
-          namespaceName: config.namespace,
-          bucketName: config.name,
-          fields: "name,size,etag,timeCreated,md5,timeModified,storageTier,archivalState" as any,
-          prefix: folder,
-          startAfter: start,
-        });
-        listObjects.objects.forEach(item => objects.push({
-          name: item.name,
-          size: item.size,
-          etag: item.etag,
-          storageTier: item.storageTier as any,
-          md5: item.md5,
-          getFile: () => partialFunctions!.getFileStream(item.name),
-          Dates: {
-            Created: new Date(item.timeCreated),
-            Modified: new Date(item.timeModified)
-          }
-        }))
-        if (!(start = listObjects.nextStartWith)) break;
-      }
-
-      return objects;
-    }
-
-    partialFunctions.getFileStream = async function getFileStream(pathLocation: string) {
-      const { value } = await client.getObject({
-        namespaceName: config.namespace,
-        bucketName: config.name,
-        objectName: pathLocation,
-      });
-      if (!value) throw new Error("No file found");
-      else if (value instanceof stream.Readable) return value;
-      else return stream.Readable.fromWeb(value as any);
-    }
+  partialFunctions.getFileStream = async function getFileStream(pathLocation: string) {
+    const { value } = await client.getObject({
+      namespaceName: config.namespace,
+      bucketName: config.name,
+      objectName: pathLocation,
+    });
+    if (!value) throw new Error("No file found");
+    else if (value instanceof stream.Readable) return value;
+    else return stream.Readable.fromWeb(value as any);
   }
 
   partialFunctions.watch = async function(folderPath, options) {

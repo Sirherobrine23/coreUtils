@@ -23,11 +23,13 @@
   "license": "GPL-2.0",
   "dependencies": {
     "@sirherobrine23/ar": "3.6.5",
-    "@sirherobrine23/basic_utils": "3.5.8",
     "@sirherobrine23/cloud": "3.6.5",
-    "@sirherobrine23/debian": "3.6.0",
+    "@sirherobrine23/dpkg": "3.6.5",
     "@sirherobrine23/docker-registry": "3.6.5",
     "@sirherobrine23/extends": "3.6.5",
     "@sirherobrine23/http": "3.6.5"
-  }
+  },
+  "workspaces": [
+    "../*"
+  ]
 }

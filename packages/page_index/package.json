@@ -10,28 +10,33 @@
   "license": "GPL-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Sirherobrine23/coreUtils.git"
+    "url": "git+https://github.com/Sirherobrine23/coreUtils.git",
+    "directory": "packages/page_index"
   },
   "bugs": {
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
   },
   "bin": {
-    "apindex": "./src/cli.js",
     "pageindex": "./src/cli.js"
   },
+  "keywords": [
+    "auto-index",
+    "page",
+    "static"
+  ],
   "scripts": {
     "prepack": "tsc --build --clean && tsc --build",
     "postpack": "tsc --build --clean"
   },
-  "keywords": [],
   "dependencies": {
     "@sirherobrine23/http": "3.6.5",
     "jsdom": "^21.1.1",
     "yaml": "^2.2.1",
-    "yargs": "^17.6.2"
+    "yargs": "^17.7.1"
   },
   "devDependencies": {
     "@types/jsdom": "^21.1.1",
     "@types/yargs": "^17.0.24"
-  }
+  },
+  "workspaces": ["../*"]
 }

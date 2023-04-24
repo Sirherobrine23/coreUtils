@@ -1,4 +1,4 @@
-import { PassThrough, Transform } from "stream";
+import { PassThrough, Transform } from "node:stream";
 import duplexify from "duplexify";
 
 function isObject(data: Buffer) {
