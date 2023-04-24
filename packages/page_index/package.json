@@ -1,6 +1,6 @@
 {
   "name": "index-pages",
-  "version": "3.6.5",
+  "version": "3.6.6",
   "description": "Create index pages",
   "type": "module",
   "main": "src/index.js",
@@ -29,7 +29,7 @@
     "postpack": "tsc --build --clean"
   },
   "dependencies": {
-    "@sirherobrine23/http": "3.6.5",
+    "@sirherobrine23/http": "3.6.6",
     "jsdom": "^21.1.1",
     "yaml": "^2.2.1",
     "yargs": "^17.7.1"
@@ -38,5 +38,7 @@
     "@types/jsdom": "^21.1.1",
     "@types/yargs": "^17.0.24"
   },
-  "workspaces": ["../*"]
+  "workspaces": [
+    "../*"
+  ]
 }

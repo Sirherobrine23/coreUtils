@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/docker-registry",
-  "version": "3.6.5",
+  "version": "3.6.6",
   "description": "docker/OCI registry Publish and Pull images directly nodejs.",
   "type": "module",
   "main": "src/index.js",
@@ -25,12 +25,14 @@
     "postpack": "tsc --build --clean"
   },
   "dependencies": {
-    "@sirherobrine23/decompress": "3.6.5",
-    "@sirherobrine23/http": "3.6.5",
+    "@sirherobrine23/decompress": "3.6.6",
+    "@sirherobrine23/http": "3.6.6",
     "tar-stream": "^3.0.0"
   },
   "devDependencies": {
     "@types/tar-stream": "^2.2.2"
   },
-  "workspaces": ["../*"]
+  "workspaces": [
+    "../*"
+  ]
 }
