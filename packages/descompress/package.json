@@ -34,5 +34,8 @@
     "@types/duplexify": "^3.6.1",
     "@types/lzma-native": "^4.0.1",
     "@types/unbzip2-stream": "^1.4.0"
+  },
+  "optionalDependencies": {
+    "cppzst": "^2.0.12"
   }
 }

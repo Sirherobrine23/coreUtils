@@ -1,23 +1,50 @@
 import * as ociBucket from "oci-objectstorage";
 import * as ociAuth from "oci-common";
 import { createReadStream, createWriteStream, promises as fs } from "node:fs";
+import { finished } from "node:stream/promises";
 import extendsFS from "@sirherobrine23/extends";
 import chokidar from "chokidar";
 import stream from "node:stream";
 import path from "node:path";
+import { http } from "@sirherobrine23/http";
 
 export type oracleRegions = "af-johannesburg-1"|"ap-chuncheon-1"|"ap-hyderabad-1"|"ap-melbourne-1"|"ap-mumbai-1"|"ap-osaka-1"|"ap-seoul-1"|"ap-singapore-1"|"ap-sydney-1"|"ap-tokyo-1"|"ca-montreal-1"|"ca-toronto-1"|"eu-amsterdam-1"|"eu-frankfurt-1"|"eu-madrid-1"|"eu-marseille-1"|"eu-milan-1"|"eu-paris-1"|"eu-stockholm-1"|"eu-zurich-1"|"il-jerusalem-1"|"me-abudhabi-1"|"me-jeddah-1"|"mx-queretaro-1"|"sa-santiago-1"|"sa-saopaulo-1"|"sa-vinhedo-1"|"uk-cardiff-1"|"uk-london-1"|"us-ashburn-1"|"us-chicago-1"|"us-phoenix-1"|"us-sanjose-1";
 export type oracleOptions = {
-  region: oracleRegions,
-  namespace: string,
-  name: string,
+  /** Bucket/Account region */
+  region: oracleRegions;
+
+  /**
+   * Bucket namespaces
+   *
+   * from OCI Web interface url: `https://cloud.oracle.com/object-storage/buckets/<namespace>/<name>/objects`
+  */
+  namespace: string;
+
+  /**
+   * Bucket name
+   *
+   * from OCI Web interface url: `https://cloud.oracle.com/object-storage/buckets/<namespace>/<name>/objects`
+   */
+  name: string;
+
+  /**
+   * Set user auth with Object or set array with file path in fist elementen and second set profile name necessary case.
+   *
+   * deprecated: pre-shared keys has been disabled, in the future we may add.
+   *
+   * @example ["/home/user/.oci/config", "sirherobrine23"]
+   * @example ["/home/user/.oci/config"]
+   * @example ["c:\\.oci\\config"]
+   * @example {tenancy: "oci", user: "example", fingerprint: "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx", privateKey: "----OCI KEY----"}
+   * @example {tenancy: "oci", user: "example", fingerprint: "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx", privateKey: "----OCI KEY----", passphase: "mySuperPassword"}
+   */
   auth?: {
-    tenancy: string,
-    user: string,
-    fingerprint: string,
-    privateKey: string,
-    passphase?: string,
-  }
+    tenancy: string;
+    user: string;
+    fingerprint: string;
+    privateKey: string;
+    passphase?: string;
+  }|string[];
 }
 
 function getRegion(region: oracleRegions) {
@@ -73,7 +100,7 @@ export type oracleFileListObject = {
 export type oracleBucket = {
   listFiles(folderPath?: string): Promise<oracleFileListObject[]>,
   deleteFile(pathLocation: string): Promise<void>,
-  uploadFile(fileName: string, fileStream: string|Buffer|stream.Readable, storageTier?: "Standard"|"InfrequentAccess"|"Archive"): Promise<void>,
+  uploadFile(fileName: string, storageTier?: "Standard"|"InfrequentAccess"|"Archive"): stream.Writable,
   getFileStream(pathLocation: string): Promise<stream.Readable>,
   updateTier?(filePath: string, storageTier: "Standard"|"InfrequentAccess"|"Archive"): Promise<void>,
   watch?(filePath: string, options?: {downloadFist?: boolean, remoteFolder?: string}): Promise<chokidar.FSWatcher>,
@@ -84,9 +111,8 @@ export type oracleBucket = {
  */
 export async function oracleBucket(config: oracleOptions) {
   const partialFunctions: Partial<oracleBucket> = {};
-  new ociAuth.SessionAuthDetailProvider()
   const client = new ociBucket.ObjectStorageClient({
-    authenticationDetailsProvider: config.auth ? new ociAuth.SessionAuthDetailProvider() : new ociAuth.SimpleAuthenticationDetailsProvider(
+    authenticationDetailsProvider: (Array.isArray(config.auth ||= [])) ? new ociAuth.SessionAuthDetailProvider((config.auth||[])[0], (config.auth||[])[1]) : new ociAuth.SimpleAuthenticationDetailsProvider(
       config.auth.tenancy,
       config.auth.user,
       config.auth.fingerprint,
@@ -96,13 +122,19 @@ export async function oracleBucket(config: oracleOptions) {
     )
   });
 
-  partialFunctions.uploadFile = async function uploadFile(fileName: string, fileStream: string|Buffer|stream.Readable) {
-    await client.putObject({
-      namespaceName: config.namespace,
-      bucketName: config.name,
-      objectName: fileName,
-      putObjectBody: fileStream,
-    });
+  partialFunctions.uploadFile = function uploadFile(fileName, storageTier) {
+    return new class WriteOCI extends stream.PassThrough {
+      constructor() {
+        super();
+        client.putObject({
+          namespaceName: config.namespace,
+          bucketName: config.name,
+          objectName: fileName,
+          putObjectBody: stream.Readable.from(this),
+          storageTier: storageTier === "Archive" ? ociBucket.models.StorageTier.Archive : storageTier === "InfrequentAccess" ? ociBucket.models.StorageTier.InfrequentAccess : storageTier === "Standard" ? ociBucket.models.StorageTier.Standard : undefined,
+        }).then(() => {}, err => this.emit("error", err));
+      }
+    }
   }
 
   partialFunctions.deleteFile = async function deleteFile(pathLocation: string) {
@@ -143,11 +175,7 @@ export async function oracleBucket(config: oracleOptions) {
   }
 
   partialFunctions.getFileStream = async function getFileStream(pathLocation: string) {
-    const { value } = await client.getObject({
-      namespaceName: config.namespace,
-      bucketName: config.name,
-      objectName: pathLocation,
-    });
+    const { value } = await client.getObject({namespaceName: config.namespace, bucketName: config.name, objectName: pathLocation});
     if (!value) throw new Error("No file found");
     else if (value instanceof stream.Readable) return value;
     else return stream.Readable.fromWeb(value as any);
@@ -170,16 +198,77 @@ export async function oracleBucket(config: oracleOptions) {
       ignoreInitial: true,
       atomic: true,
     }).on("add", async (filePath) => {
-      await partialFunctions!.uploadFile(path.posix.resolve("/", path.relative(folderPath, filePath)), createReadStream(filePath));
+      await finished(createReadStream(filePath).pipe(partialFunctions!.uploadFile(path.posix.resolve("/", path.relative(folderPath, filePath)))))
     }).on("change", async (filePath) => {
-      await partialFunctions!.uploadFile(path.posix.resolve("/", path.relative(folderPath, filePath)), createReadStream(filePath));
+      await finished(createReadStream(filePath).pipe(partialFunctions!.uploadFile(path.posix.resolve("/", path.relative(folderPath, filePath)))))
     }).on("unlink", async (filePath) => {
       await partialFunctions!.deleteFile(path.posix.resolve("/", path.relative(folderPath, filePath)));
     }).on("unlinkDir", async (filePath) => {
       const filesList = (await partialFunctions!.listFiles(path.posix.resolve("/", path.relative(folderPath, filePath)))).map(d => d.name);
-      for await (const remote of filesList) await partialFunctions!.deleteFile(remote);
+      for (const remote of filesList) await partialFunctions!.deleteFile(remote);
     });
   }
 
   return partialFunctions as oracleBucket;
+}
+
+export function oracleBucketPreAuth(region: oracleRegions, namespace: string, name: string, preAuthKey: string) {
+  getRegion(region);
+  const funs = {
+    getFile(filename: string) {
+      return http.streamRoot(new URL(path.posix.join("/p", preAuthKey, "n", namespace, "b", name, "o", encodeURIComponent(filename)), `https://objectstorage.${region}.oraclecloud.com`), {
+        disableHTTP2: true
+      });
+    },
+    uploadFile(filename: string, storageTier?: oracleFileListObject["storageTier"]): stream.Writable {
+      return new class writeFile extends stream.PassThrough {
+        constructor() {
+          super();
+          http.bufferRequest(new URL(path.posix.join("/p", preAuthKey, "n", namespace, "b", name, "o", encodeURIComponent(filename)), `https://objectstorage.${region}.oraclecloud.com`), {
+            method: "PUT",
+            body: stream.Readable.from(this),
+            disableHTTP2: true,
+            headers: {
+              ...(!!storageTier ? {
+                "storage-tier": storageTier,
+              } : {}),
+              // "Content-Type": "application/x-directory",
+              // "opc-meta-virtual-folder-directory-object": "true",
+              "Content-Type": "application/octet-stream",
+            }
+          });
+        }
+      }
+    },
+    async listFiles(folder: string = "") {
+      const data: oracleFileListObject[] = [];
+      let startAfter: string;
+      while (true) {
+        const response = await http.jsonRequest<{nextStartWith?: string, objects: ociBucket.models.ObjectSummary[]}>(new URL(path.posix.join("/p", preAuthKey, "n", namespace, "b", name, "o"), `https://objectstorage.${region}.oraclecloud.com`), {
+          method: "GET",
+          query: {
+            limit: 1000,
+            fields: "name,size,etag,timeCreated,md5,timeModified,storageTier,archivalState",
+            prefix: folder ?? "",
+            startAfter: startAfter ?? "",
+          }
+        });
+        response.body.objects.forEach(item => data.push({
+          name: item.name,
+          size: item.size,
+          etag: item.etag,
+          storageTier: item.storageTier as any,
+          md5: item.md5,
+          getFile: async () => funs.getFile(item.name),
+          Dates: {
+            Created: new Date(item.timeCreated),
+            Modified: new Date(item.timeModified)
+          }
+        }));
+        if (!(startAfter = response.body.nextStartWith)) break;
+      }
+      return data;
+    }
+  };
+  return funs;
 }
