@@ -1,5 +1,5 @@
 import { createReadStream, createWriteStream, promises as fs } from "node:fs";
-import { decompressStream, compressAvaible, compressStream } from "@sirherobrine23/decompress";
+import { decompressStream, Compressors, compressStream } from "@sirherobrine23/decompress";
 import { goArch, goSystem, parseImage } from "./image.js";
 import { Auth, userAuth } from "./auth.js";
 import { extendsCrypto } from "@sirherobrine23/extends";
@@ -438,7 +438,7 @@ export class v2 {
      * @param compress - Compress layer. Recomends `gzip`.
      * @returns
      */
-    const createBlob = (compress: Exclude<compressAvaible, "deflate"|"xz">) => {
+    const createBlob = (compress: Exclude<Compressors, "deflate"|"xz">) => {
       const tar = tarStream.pack();
       let filePath: string;
       const filePipe = tar.pipe(compressStream(compress)).pipe(createWriteStream((filePath = path.join(tmpLocation, crypto.randomBytes(8).toString("hex")))));

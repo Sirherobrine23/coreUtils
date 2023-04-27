@@ -1,7 +1,7 @@
 {
   "name": "@sirherobrine23/decompress",
   "version": "3.6.6",
-  "description": "detect and auto decompress stream if avaible",
+  "description": "Compress and Descompress, to decompress, auto detect compress algorithm.",
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
@@ -17,7 +17,15 @@
     "auto",
     "decompress",
     "compress",
-    "streaming"
+    "streaming",
+    "stream",
+    "xz",
+    "lzma",
+    "gzip",
+    "bzip2",
+    "Zstd",
+    "Zstandard",
+    "deflate"
   ],
   "author": "Matheus Sampaio Queirora <srherobrine20@gmail.com>",
   "license": "GPL-2.0-only",
@@ -26,6 +34,7 @@
   },
   "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
   "dependencies": {
+    "@sirherobrine23/cppzst": "^2.1.0",
     "duplexify": "^4.1.2",
     "lzma-native": "^8.0.6",
     "unbzip2-stream": "^1.4.3"
@@ -34,8 +43,5 @@
     "@types/duplexify": "^3.6.1",
     "@types/lzma-native": "^4.0.1",
     "@types/unbzip2-stream": "^1.4.0"
-  },
-  "optionalDependencies": {
-    "cppzst": "^2.0.12"
   }
 }

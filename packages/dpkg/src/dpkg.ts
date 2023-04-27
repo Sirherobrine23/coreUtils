@@ -1,6 +1,6 @@
-import decompress, { compress, compressAvaible, decompressStream } from "@sirherobrine23/decompress";
-import { arParseAbstract, createArStream, parseArStream } from "@sirherobrine23/ar";
 import { createReadStream, createWriteStream, promises as fs } from "node:fs";
+import { arParseAbstract, createArStream, parseArStream } from "@sirherobrine23/ar";
+import { Compressors, compressStream, decompressStream } from "@sirherobrine23/decompress";
 import { extendsCrypto, extendsFS } from "@sirherobrine23/extends";
 import { tmpdir } from "node:os";
 import stream_promise, { finished } from "node:stream/promises";
@@ -150,11 +150,11 @@ export interface packageConfig {
     /**
      * Compress the data.tar tar to the smallest possible size
      */
-    data?: Exclude<compressAvaible, "deflate">;
+    data?: Exclude<Compressors, "deflate">;
     /**
      * compress control file to the smallest file possible
      */
-    control?: Exclude<compressAvaible, |"deflate">;
+    control?: Exclude<Compressors, "zst"|"deflate">;
   },
 
   /**
@@ -191,7 +191,7 @@ export interface packageConfig {
 export function createPackage(packageInfo: packageConfig) {
   const com = (packageInfo.compress || {data: "gzip", control: "gzip"});
   const controlFilename = "control.tar"+(com.control === "xz" ? ".xz" : com.control === "gzip" ? ".gz" : ""),
-  dataFilename = "data.tar"+(com.data === "xz" ? ".xz" : com.data === "gzip" ? ".gz" : "");
+  dataFilename = "data.tar"+(com.data === "xz" ? ".xz" : com.data === "gzip" ? ".gz" : com.data === "zst" ? ".zst" : "");
 
   // return stream
   return createArStream(async function pack(ar, callback) {
@@ -202,7 +202,7 @@ export function createPackage(packageInfo: packageConfig) {
     ar.addEntry("debian-binary", {size: 4}, "2.0\n", "utf8");
 
     // control file
-    const controlTar = tarStream.pack(), conSave = controlTar.pipe(compress(com.control || "passThrough")).pipe(createWriteStream(path.join(filesStorage, controlFilename)));
+    const controlTar = tarStream.pack(), conSave = controlTar.pipe(compressStream(com.control || "passThrough")).pipe(createWriteStream(path.join(filesStorage, controlFilename)));
 
     // Control file
     const controlData = createControl(packageInfo.control).concat("\n");
@@ -223,7 +223,7 @@ export function createPackage(packageInfo: packageConfig) {
     await stream_promise.finished(conSave).then(() => ar.addLocalFile(path.join(filesStorage, controlFilename))).then(() => fs.rm(path.join(filesStorage, controlFilename), {force: true}));
 
     // Data tarball
-    const compressStr = compress(com.data || "passThrough");
+    const compressStr = compressStream(com.data || "passThrough");
     const data = tarStream.pack(), dataSave = data.pipe(compressStr).pipe(createWriteStream(path.join(filesStorage, dataFilename)));
     const filesFolder = await extendsFS.readdirV2(packageInfo.dataFolder, true);
     for (const file of filesFolder) {
@@ -343,5 +343,5 @@ export function parsePackageStream(): parseStream {
 export async function getPackageData(fileStream: stream.Readable) {
   const arParse = fileStream.pipe(parseArStream());
   const dataTar = await new Promise<stream.Readable>((done, rej) => arParse.once("close", () => rej(new Error("There is no data.tar or it is not a debian package"))).on("entry", (str, stream) => path.basename(str.name).startsWith("data.tar") ? done(stream) : null));
-  return dataTar.pipe(decompress());
+  return dataTar.pipe(decompressStream());
 }

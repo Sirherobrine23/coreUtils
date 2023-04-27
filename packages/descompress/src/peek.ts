@@ -1,4 +1,4 @@
-import { PassThrough, Transform } from "node:stream";
+import { Duplex, PassThrough, Transform } from "node:stream";
 import duplexify from "duplexify";
 
 function isObject(data: Buffer) {
@@ -13,11 +13,11 @@ export interface options {
 
 export type onpeek = (data: Buffer, swap: (err?: any, str?: Transform) => void) => void
 
-export function peek(opts: options, onpeek: onpeek): duplexify.Duplexify;
-export function peek(onpeek: onpeek): duplexify.Duplexify;
-export function peek(opts: number): duplexify.Duplexify;
-export function peek(): duplexify.Duplexify;
-export function peek(opts?: options|number|onpeek, onpeek?: onpeek): duplexify.Duplexify {
+export function peek(opts: options, onpeek: onpeek): Duplex;
+export function peek(onpeek: onpeek): Duplex;
+export function peek(opts: number): Duplex;
+export function peek(): Duplex;
+export function peek(opts?: options|number|onpeek, onpeek?: onpeek): Duplex {
   if (typeof opts === "number") opts = {maxBuffer: opts};
   if (typeof opts === "function") return peek(null, opts)
   if (!opts) opts = {};
@@ -33,7 +33,7 @@ export function peek(opts?: options|number|onpeek, onpeek?: onpeek): duplexify.D
     return ready(Buffer.concat(buffer), null, (err) => err ? dup.destroy(err) : dup.uncork());
   }
 
-  function ready(data: Buffer, overflow, cb) {
+  function ready(data: Buffer, overflow?: Buffer, cb?: (err?: any) => void) {
     dup.removeListener("preend", onpreend)
     onpeek(data, function(err, parser) {
       if (err) return cb(err)
