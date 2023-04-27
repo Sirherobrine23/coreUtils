@@ -30,7 +30,7 @@ export type oracleOptions = {
   /**
    * Set user auth with Object or set array with file path in fist elementen and second set profile name necessary case.
    *
-   * deprecated: pre-shared keys has been disabled, in the future we may add.
+   * deprecated: pre-shared keys has been disabled, use `oracleBucketPreAuth` function.
    *
    * @example ["/home/user/.oci/config", "sirherobrine23"]
    * @example ["/home/user/.oci/config"]
@@ -212,14 +212,35 @@ export async function oracleBucket(config: oracleOptions) {
   return partialFunctions as oracleBucket;
 }
 
+/**
+ * Maneger bucket with pre auth keys
+ *
+ * @param region - Bucket region
+ * @param namespace - Bucket namespace
+ * @param name - Bucket name
+ * @param preAuthKey - Auth key
+ */
 export function oracleBucketPreAuth(region: oracleRegions, namespace: string, name: string, preAuthKey: string) {
-  getRegion(region);
+  getRegion(region); // Check valid region
   const funs = {
+    /**
+     * Get file from Bucket
+     *
+     * @param filename - File name in Bucket
+     * @returns
+     */
     getFile(filename: string) {
       return http.streamRoot(new URL(path.posix.join("/p", preAuthKey, "n", namespace, "b", name, "o", encodeURIComponent(filename)), `https://objectstorage.${region}.oraclecloud.com`), {
         disableHTTP2: true
-      });
+      }, true);
     },
+    /**
+     * Upload file to bucket
+     *
+     * @param filename - File name to add in Bucket
+     * @param storageTier - Another tier to storage file
+     * @returns Stream to write file
+     */
     uploadFile(filename: string, storageTier?: oracleFileListObject["storageTier"]): stream.Writable {
       return new class writeFile extends stream.PassThrough {
         constructor() {
@@ -229,17 +250,17 @@ export function oracleBucketPreAuth(region: oracleRegions, namespace: string, na
             body: stream.Readable.from(this),
             disableHTTP2: true,
             headers: {
-              ...(!!storageTier ? {
-                "storage-tier": storageTier,
-              } : {}),
-              // "Content-Type": "application/x-directory",
-              // "opc-meta-virtual-folder-directory-object": "true",
+              ...(!!storageTier ? {"storage-tier": storageTier} : {}),
               "Content-Type": "application/octet-stream",
             }
-          });
+          }).catch(err => this.emit("error", err));
         }
       }
     },
+    /**
+     * List files in Bucket
+     * @returns Files array
+     */
     async listFiles(folder: string = "") {
       const data: oracleFileListObject[] = [];
       let startAfter: string;
