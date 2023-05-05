@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import stream from "node:stream";
 
-export type hashAlgorithm =                            "sha1" | "sha256" | "sha512" | "md4" | "md5";
-const ALGORITHM_MAP: (hashAlgorithm|"all")[] = ["all", "sha1",  "sha256",  "sha512",  "md4",  "md5"];
+export type hashAlgorithm =                            "sha1" | "sha256" | "sha512" | "md5";
+const ALGORITHM_MAP: (hashAlgorithm|"all")[] = ["all", "sha1",  "sha256",  "sha512",  "md5"];
 
 export type hashObject = {
   byteLength: number,
@@ -51,9 +51,6 @@ export function createHash(target?: "all"|hashAlgorithm, digestText?: crypto.Bin
 
   // sha1
   if ((["all", "sha1"]).includes(target)) crypHash.sha1 = crypto.createHash("sha1");
-
-  // md4
-  if ((["all", "md4"]).includes(target)) crypHash.md4 = crypto.createHash("md4");
 
   // md5
   if ((["all", "md5"]).includes(target)) crypHash.md5 = crypto.createHash("md5");
