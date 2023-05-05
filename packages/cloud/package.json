@@ -22,13 +22,13 @@
     "postpack": "tsc --build --clean"
   },
   "dependencies": {
-    "@googleapis/drive": "^5.0.2",
+    "@googleapis/drive": "^5.1.0",
     "@sirherobrine23/extends": "3.6.7",
     "@sirherobrine23/http": "3.6.7",
     "chokidar": "^3.5.3",
-    "google-auth-library": "^8.7.0",
-    "oci-common": "^2.57.0",
-    "oci-objectstorage": "^2.57.0"
+    "google-auth-library": "^8.8.0",
+    "oci-common": "^2.59.0",
+    "oci-objectstorage": "^2.59.0"
   },
   "workspaces": [
     "../extends",

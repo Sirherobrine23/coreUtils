@@ -1,8 +1,8 @@
 import gotMain, { Method, Headers, Request, HTTPError } from "got";
+import { finished } from "node:stream/promises";
 import { JSDOM } from "jsdom";
 import stream from "node:stream";
-import { finished } from "node:stream/promises";
-export {HTTPError};
+export { HTTPError };
 
 const ignoreBody: Method[] = ["GET", "get", "HEAD", "head"];
 const got = gotMain.extend({
@@ -269,7 +269,7 @@ export async function getExternalIP(): Promise<{ipv4?: string, ipv6?: string, ra
 }
 
 /** Get urls from HTML page */
-export async function getURLs(...args: Parameters<typeof bufferRequest>) {
+export async function htmlURLs(...args: Parameters<typeof bufferRequest>) {
   const requestResponse = await bufferRequest(...args);
   const { serialize, window } = new JSDOM(requestResponse.body, {url: requestResponse.url.toString()});
   return {

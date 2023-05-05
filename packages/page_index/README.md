@@ -10,10 +10,8 @@ It can also be used to reduce the server load for servers that serve static cont
 
 The file icons are also embedded into the `index.html` file so there is no need for aditional HTTP requests.
 
-[Demo](https://sirherobrine23.github.io/Index-pages/)
-
 ## How do I use it?
 
-Install with `npm i -g index-pages`.
+Install with `npm i -g index-pages` and run `apindex` to current folder, `apindex ./folder` or `apindex /`.
 
-and run `apindex` to current folder, `apindex ./folder` or `apindex /`.
+else if run with npx: `npx index-pages ./`

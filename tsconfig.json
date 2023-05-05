@@ -21,6 +21,7 @@
   "exclude": [
     "**/*.test.ts",
     "**/test*/**",
+    "**/scripts/**",
     "node_modules/"
   ],
   "ts-node": {

@@ -104,22 +104,58 @@ export interface fileData {
   }
 }
 
-export type filterCallback = (relativePath: string, stats: Stats, fullPath: string) => boolean|Promise<boolean>;
-
+export type filterCallback = (relativePath: string, fullPath: string, stats: Stats) => boolean|Promise<boolean>;
+export type callback = (relativePath: string, fullPath: string, stats: Stats) => void;
+/**
+ * 
+ * @param folderPath - Folder path
+ * @param withStats - Add file/folder stats
+ * @param filter - Filter function
+ * @param callback - File/folder callback
+ */
+export async function readdirV2(folderPath: string, withStats: true, filter: filterCallback, callback: callback): Promise<void>;
+/**
+ * List the files and filter them returning an array with the paths and Stats.
+ *
+ * @param folderPath - Folder path
+ * @param withStats - Add file/folder stats
+ * @param filter - Filter function
+ */
 export async function readdirV2(folderPath: string, withStats: true, filter: filterCallback): Promise<fileData[]>;
+/**
+ * List files and folders recursively returning an array with paths and stats.
+ *
+ * @param folderPath - Folder path
+ * @param withStats - Add file/folder stats
+ */
 export async function readdirV2(folderPath: string, withStats: true): Promise<fileData[]>;
+/**
+ * List and filter files and folders recursively returning an array of paths.
+ *
+ * @param folderPath - Folder path
+ * @param filter - Filter function
+ */
 export async function readdirV2(folderPath: string, filter: filterCallback): Promise<string[]>;
+/**
+ * List all files in a folder recursively returning an array with the paths.
+ * @param folderPath - Folder path
+ */
 export async function readdirV2(folderPath: string): Promise<string[]>;
-export async function readdirV2(folderPath: string, ...args: (boolean|filterCallback)[]): Promise<(fileData|string)[]> {
-  let withStats: boolean = args.find(f => typeof f === "boolean") as any;
-  let filter: filterCallback = (args.find(c => typeof c === "function") as any);
-  withStats ??= false
-  filter ??= () => true;
+export async function readdirV2(folderPath: string, arg0?: boolean|filterCallback, arg1?: filterCallback, arg2?: callback): Promise<void|(fileData|string)[]> {
+  let withStats = false, filter: filterCallback = () => true, callback: undefined|callback;
+  if (typeof arg0 === "function") filter = arg0;
+  else if (typeof arg0 === "boolean") {
+    withStats = arg0;
+    if (typeof arg1 === "function") filter = arg1;
+    if (typeof arg2 === "function") callback = arg2;
+  }
+
 
   const filesArray: (fileData|string)[] = [];
-  async function read(fpath: string) {
-    if (!(await Promise.resolve().then(async () => filter(path.relative(folderPath, fpath), await fs.lstat(fpath), fpath)).then(data => !!data))) return;
-    if (!withStats) filesArray.push(fpath);
+  async function read(fpath: string): Promise<any> {
+    if (!(await Promise.resolve().then(async () => filter(path.relative(folderPath, fpath), fpath, await fs.lstat(fpath))).then(data => !!data))) return;
+    if (typeof callback === "function") await fs.lstat(fpath).then(stat => callback(path.relative(folderPath, fpath), fpath, stat));
+    else if (!withStats) filesArray.push(fpath);
     else {
       const stat = await fs.lstat(fpath);
       const d: fileData = {
@@ -137,16 +173,16 @@ export async function readdirV2(folderPath: string, ...args: (boolean|filterCall
       if (d.type !== "directory") d.size = stat.size
       filesArray.push(d);
     }
-    if (await isDirectory(fpath)) await Promise.all((await fs.readdir(fpath)).map(async f => read(path.join(fpath, f))));
+    if (await isDirectory(fpath)) for (const d of await fs.readdir(fpath)) await read(path.join(fpath, d));
   }
   await read(path.resolve(folderPath));
-  return filesArray;
+  if (typeof callback !== "function") return filesArray;
 }
 
-export async function readFile(filePath: string, start: number, end: number) {
+export async function readFile(filePath: string, options?: {start: number, end: number}) {
   return new Promise<Buffer>((done, reject) => {
     let buf: Buffer[] = [];
-    createReadStream(filePath, { start, end }).on("error", reject).on("data", (data: Buffer) => buf.push(data)).on("close", () => {
+    createReadStream(filePath, { start: options?.start, end: options?.end }).on("error", reject).on("data", (data: Buffer) => buf.push(data)).on("close", () => {
       done(Buffer.concat(buf));
       buf = null;
     });

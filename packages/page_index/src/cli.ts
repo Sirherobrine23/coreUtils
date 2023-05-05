@@ -4,8 +4,11 @@ import yargs from "yargs";
 import pageIndex from "./index.js";
 
 const options = yargs(process.argv.slice(2)).strictOptions().help(false).option("subPath", {
+  type: "string",
+  string: true,
   alias: "s",
-  default: "/"
+  default: "/",
+  description: "Sub path to index, example in github pages set '/<project-name>' or '/<project-name>/<sub-path>'",
 }).parseSync();
 
 // Create index

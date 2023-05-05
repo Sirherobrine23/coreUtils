@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import stream from "node:stream";
 
-export type hashAlgorithm = "sha1"|"sha256"|"sha512"|"md5";
+export type hashAlgorithm =                            "sha1" | "sha256" | "sha512" | "md4" | "md5";
+const ALGORITHM_MAP: (hashAlgorithm|"all")[] = ["all", "sha1",  "sha256",  "sha512",  "md4",  "md5"];
+
 export type hashObject = {
   byteLength: number,
   hash: {
@@ -39,16 +41,23 @@ export declare interface hashWrite extends stream.Writable {
 }
 
 export function createHash(target?: "all"|hashAlgorithm, digestText?: crypto.BinaryToTextEncoding): hashWrite {
-  if (!(["all", "sha256", "sha1", "md5"]).includes(target)) target = "all";
+  if (!ALGORITHM_MAP.includes(target)) target = "all";
   const crypHash: {[U in hashAlgorithm]?: crypto.Hash} = {};
   // sha512
   if ((["all", "sha512"]).includes(target)) crypHash.sha512 = crypto.createHash("sha512");
+
   // sha256
   if ((["all", "sha256"]).includes(target)) crypHash.sha256 = crypto.createHash("sha256");
+
   // sha1
   if ((["all", "sha1"]).includes(target)) crypHash.sha1 = crypto.createHash("sha1");
+
+  // md4
+  if ((["all", "md4"]).includes(target)) crypHash.md4 = crypto.createHash("md4");
+
   // md5
   if ((["all", "md5"]).includes(target)) crypHash.md5 = crypto.createHash("md5");
+
   let byteLength = 0;
   return new stream.Writable({
     write(chunk, encoding, callback) {

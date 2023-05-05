@@ -42,7 +42,7 @@ export interface debianControl {
 };
 
 // Archs array
-const archTest = ["all", "armhf", "armel", "mipsn32", "mipsn32el", "mipsn32r6", "mipsn32r6el", "mips64", "mips64el", "mips64r6", "mips64r6el", "powerpcspe", "x32", "arm64ilp32", "i386", "ia64", "alpha", "amd64", "arc", "armeb", "arm", "arm64", "avr32", "hppa", "m32r", "m68k", "mips", "mipsel", "mipsr6", "mipsr6el", "nios2", "or1k", "powerpc", "powerpcel", "ppc64", "ppc64el", "riscv64", "s390", "s390x", "sh3", "sh3eb", "sh4", "sh4eb", "sparc", "sparc64", "tilegx"];
+const archTest: debianArch[] = ["all", "armhf", "armel", "mipsn32", "mipsn32el", "mipsn32r6", "mipsn32r6el", "mips64", "mips64el", "mips64r6", "mips64r6el", "powerpcspe", "x32", "arm64ilp32", "i386", "ia64", "alpha", "amd64", "arc", "armeb", "arm", "arm64", "avr32", "hppa", "m32r", "m68k", "mips", "mipsel", "mipsr6", "mipsr6el", "nios2", "or1k", "powerpc", "powerpcel", "ppc64", "ppc64el", "riscv64", "s390", "s390x", "sh3", "sh3eb", "sh4", "sh4eb", "sparc", "sparc64", "tilegx"];
 
 /**
  * Parse `control` file and return Object with package config.
@@ -144,8 +144,22 @@ export function createControl(controlConfig: debianControl) {
 }
 
 export interface packageConfig {
+  /**
+   * folder with files to data.tar
+   */
   dataFolder: string;
+
+  /**
+   * Filter files in data.tar
+   */
+  filter?: extendsFS.filterCallback;
+
+  /**
+   * Package control
+   */
   control: debianControl;
+
+  /** Compress tarballs files */
   compress?: {
     /**
      * Compress the data.tar tar to the smallest possible size
@@ -192,7 +206,7 @@ export function createPackage(packageInfo: packageConfig) {
   const com = (packageInfo.compress || {data: "gzip", control: "gzip"});
   const controlFilename = "control.tar"+(com.control === "xz" ? ".xz" : com.control === "gzip" ? ".gz" : ""),
   dataFilename = "data.tar"+(com.data === "xz" ? ".xz" : com.data === "gzip" ? ".gz" : com.data === "zst" ? ".zst" : "");
-
+  packageInfo.filter ||= () => true;
   // return stream
   return createArStream(async function pack(ar, callback) {
     if (!(await extendsFS.exists(packageInfo?.dataFolder))) throw new TypeError("required dataFolder to create data.tar");
@@ -220,26 +234,31 @@ export function createPackage(packageInfo: packageConfig) {
     }
 
     controlTar.finalize();
-    await stream_promise.finished(conSave).then(() => ar.addLocalFile(path.join(filesStorage, controlFilename))).then(() => fs.rm(path.join(filesStorage, controlFilename), {force: true}));
+    await stream_promise.finished(conSave);
+    await ar.addLocalFile(path.join(filesStorage, controlFilename));
+    await fs.rm(path.join(filesStorage, controlFilename), {force: true});
 
     // Data tarball
     const compressStr = compressStream(com.data || "passThrough");
     const data = tarStream.pack(), dataSave = data.pipe(compressStr).pipe(createWriteStream(path.join(filesStorage, dataFilename)));
-    const filesFolder = await extendsFS.readdirV2(packageInfo.dataFolder, true);
-    for (const file of filesFolder) {
-      if (file.path.startsWith("DEBIAN")||file.path.startsWith("debian")||!(file.type === "file"||file.type === "directory")) continue;
-      const entry = data.entry({
-        name: path.posix.join(".", path.posix.resolve(path.posix.sep, file.path.split(path.sep).join(path.posix.sep))),
-        type: file.type,
-        size: file.size
-      });
-      if (file.type === "file") createReadStream(file.fullPath).pipe(entry);
-      else entry.end();
-      await stream_promise.finished(entry);
-    }
+    await extendsFS.readdirV2(packageInfo.dataFolder, true, (rel, full, stat) => rel.toLowerCase() === "debian" ? false : packageInfo.filter(rel, full, stat), async (rel, full, stats) => {
+      rel = path.posix.join(".", path.posix.resolve(path.posix.sep, rel.split(path.sep).join(path.posix.sep)));
+      if (stats.isCharacterDevice()) return stream_promise.finished(data.entry({type: "character-device", name: rel, gid: stats.gid, uid: stats.uid, size: stats.size, mode: stats.mode, mtime: stats.mtime, linkname: await fs.realpath(full)}).end(), {error: true});
+      if (stats.isSymbolicLink()) return stream_promise.finished(data.entry({type: "symlink", name: rel, gid: stats.gid, uid: stats.uid, size: stats.size, mode: stats.mode, mtime: stats.mtime, linkname: await fs.realpath(full)}).end(), {error: true});
+      if (stats.isBlockDevice()) return stream_promise.finished(data.entry({type: "block-device", name: rel, gid: stats.gid, uid: stats.uid, size: stats.size, mode: stats.mode, mtime: stats.mtime, linkname: await fs.realpath(full)}).end(), {error: true});
+      if (stats.isDirectory()) return stream_promise.finished(data.entry({type: "directory", name: rel, gid: stats.gid, uid: stats.uid, size: stats.size, mode: stats.mode, mtime: stats.mtime}).end(), {error: true});
+      if (stats.isSocket()) return stream_promise.finished(data.entry({type: "file", name: rel, gid: stats.gid, uid: stats.uid, size: stats.size, mode: stats.mode, mtime: stats.mtime}).end(), {error: true});
+      if (stats.isFIFO()) return stream_promise.finished(data.entry({type: "fifo", name: rel, gid: stats.gid, uid: stats.uid, size: stats.size, mode: stats.mode, mtime: stats.mtime, linkname: await fs.realpath(full)}).end(), {error: true});
+      if (stats.isFile()) return stream_promise.finished(createReadStream(full).pipe(data.entry({type: "file", name: rel, gid: stats.gid, uid: stats.uid, size: stats.size, mode: stats.mode, mtime: stats.mtime})), {error: true});
+    });
+
     data.finalize();
-    await stream_promise.finished(dataSave).then(() => ar.addLocalFile(path.join(filesStorage, dataFilename))).then(() => fs.rm(path.join(filesStorage, dataFilename), {force: true}));
+    await stream_promise.finished(dataSave);
+    await ar.addLocalFile(path.join(filesStorage, dataFilename));
+    await fs.rm(path.join(filesStorage, dataFilename), {force: true})
     await fs.rm(filesStorage, {recursive: true, force: true});
+
+    // End file
     return callback();
   });
 }

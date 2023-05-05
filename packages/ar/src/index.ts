@@ -360,7 +360,7 @@ export async function createFile(filePath: string) {
  * @param filePath - File path
  */
 export async function parseFile(filePath: string) {
-  if (!((await extendsFS.readFile(filePath, 0, 8)).toString("ascii").startsWith("!<arch>\n"))) throw new Error("Invalid ar file, invalid magic head!");
+  if (!((await extendsFS.readFile(filePath, {start: 0, end: 8})).toString("ascii").startsWith("!<arch>\n"))) throw new Error("Invalid ar file, invalid magic head!");
   const heads: {head: arHeader, start: number, end: number}[] = [];
   let oldBuffer: Buffer, fileStreamSize: number = 0, offset = 8;
   await finished(oldFs.createReadStream(filePath, {start: 8}).pipe(new stream.Writable({
