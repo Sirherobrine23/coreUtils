@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/cloud",
-  "version": "3.6.8",
+  "version": "3.6.9",
   "description": "Multi cloud maneger and API simplify",
   "type": "module",
   "main": "src/index.js",
@@ -23,8 +23,8 @@
   },
   "dependencies": {
     "@googleapis/drive": "^5.1.0",
-    "@sirherobrine23/extends": "3.6.8",
-    "@sirherobrine23/http": "3.6.8",
+    "@sirherobrine23/extends": "3.6.9",
+    "@sirherobrine23/http": "3.6.9",
     "chokidar": "^3.5.3",
     "google-auth-library": "^8.8.0",
     "oci-common": "^2.59.0",

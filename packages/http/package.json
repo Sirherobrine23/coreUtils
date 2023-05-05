@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/http",
-  "version": "3.6.8",
+  "version": "3.6.9",
   "description": "Core http module using got module",
   "type": "module",
   "main": "src/index.js",
@@ -22,7 +22,7 @@
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
   "dependencies": {
-    "@sirherobrine23/extends": "3.6.8",
+    "@sirherobrine23/extends": "3.6.9",
     "acme-client": "^5.0.0",
     "got": "^12.6.0",
     "jsdom": "^22.0.0",
