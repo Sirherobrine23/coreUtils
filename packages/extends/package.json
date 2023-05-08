@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/extends",
-  "version": "3.6.9",
+  "version": "3.6.10",
   "description": "Extends nodejs APIs to Promises and new functions",
   "type": "module",
   "main": "src/index.js",
