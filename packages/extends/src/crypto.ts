@@ -93,3 +93,23 @@ export async function createHashAsync(from: stream.Readable|stream.Transform|str
     return from.pipe(createHash(...args)).on("hashObject", resolve).on("error", reject);
   });
 }
+
+export class randomBytesStream extends stream.Readable {
+  constructor(fileSize: number, options?: stream.ReadableOptions) {
+    super({
+      ...options,
+      emitClose: false,
+      autoDestroy: true,
+      objectMode: false,
+      read(_size) {
+        if (fileSize > 0) {
+          const dtr = crypto.randomBytes(Math.max(0, Math.min(Math.max(1, this.readableHighWaterMark), fileSize)));
+          fileSize = fileSize - dtr.byteLength;
+          if (!(this.closed||this.destroyed)) this.push(dtr);
+          return;
+        }
+        this.push(null);
+      },
+    });
+  }
+}

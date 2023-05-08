@@ -1,7 +1,6 @@
 import { Stats, createReadStream, createWriteStream } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { randomBytesStream } from "./crypto.js";
 import { finished } from "node:stream/promises";
-import stream from "node:stream";
 import path from "node:path";
 import fs from "node:fs/promises";
 
@@ -107,7 +106,7 @@ export interface fileData {
 export type filterCallback = (relativePath: string, fullPath: string, stats: Stats) => boolean|Promise<boolean>;
 export type callback = (relativePath: string, fullPath: string, stats: Stats) => void;
 /**
- * 
+ *
  * @param folderPath - Folder path
  * @param withStats - Add file/folder stats
  * @param filter - Filter function
@@ -187,25 +186,6 @@ export async function readFile(filePath: string, options?: {start: number, end: 
       buf = null;
     });
   });
-}
-
-export class randomBytesStream extends stream.Readable {
-  constructor(fileSize: number) {
-    super({
-      // highWaterMark: 256,
-      emitClose: false,
-      read(_size) {
-        if (fileSize > 0) {
-          // if (Math.max(0, Math.min(64, fileSize)) <= 0) return;
-          const dtr = randomBytes(Math.max(0, Math.min(Math.max(1, this.readableHighWaterMark), fileSize)));
-          fileSize = fileSize - dtr.byteLength;
-          if (!(this.closed||this.destroyed)) this.push(dtr);
-          return;
-        }
-        this.push(null);
-      },
-    });
-  }
 }
 
 export async function createRandomFile(filePath: string, fileSize: number) {
