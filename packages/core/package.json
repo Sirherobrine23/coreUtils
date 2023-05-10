@@ -30,6 +30,11 @@
     "@sirherobrine23/http": "3.6.10"
   },
   "workspaces": [
-    "../*"
+    "../ar",
+    "../cloud",
+    "../dpkg",
+    "../docker",
+    "../extends",
+    "../http"
   ]
 }

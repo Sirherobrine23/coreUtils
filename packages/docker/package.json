@@ -33,6 +33,7 @@
     "@types/tar-stream": "^2.2.2"
   },
   "workspaces": [
-    "../*"
+    "../descompress",
+    "../http"
   ]
 }

@@ -33,6 +33,6 @@
     "@sirherobrine23/extends": "3.6.10"
   },
   "workspaces": [
-    "../*"
+    "../extends"
   ]
 }

@@ -1,0 +1,17 @@
+* {
+  font-family: sans-serif;
+}
+svg {
+  width: 17px;
+  padding-right: 5px;
+}
+img {
+  width: 3%;
+}
+
+tbody tr td a {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+
+}

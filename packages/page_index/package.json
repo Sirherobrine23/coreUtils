@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@sirherobrine23/http": "3.6.10",
+    "@sirherobrine23/extends": "3.6.10",
     "jsdom": "^22.0.0",
     "yargs": "^17.7.2"
   },
@@ -38,6 +39,7 @@
     "@types/yargs": "^17.0.24"
   },
   "workspaces": [
-    "../*"
+    "../http",
+    "../extends"
   ]
 }

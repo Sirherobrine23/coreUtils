@@ -1,18 +1,27 @@
 #!/usr/bin/env node
-import path from "node:path";
+import { createIndex, defaultIcons } from "./index.js";
 import yargs from "yargs";
-import pageIndex from "./index.js";
+import path from "path";
 
-const options = yargs(process.argv.slice(2)).strictOptions().help(false).option("subPath", {
+const options = yargs(process.argv.slice(2)).help(true).alias("h", "help").strictOptions().option("rootPage", {
+  default: "/",
   type: "string",
   string: true,
-  alias: "s",
-  default: "/",
-  description: "Sub path to index, example in github pages set '/<project-name>' or '/<project-name>/<sub-path>'",
+  description: "set Root page, use if run to Github pages"
+}).option("source", {
+  type: "string",
+  string: true,
+  alias: [
+    "src", "s"
+  ],
+  default: process.cwd(),
+  description: "Page source."
 }).parseSync();
 
-// Create index
-await pageIndex({
-  subPath: options.subPath||"/",
-  folder: path.resolve(process.cwd(), String(options._.at(-1) ?? "")),
+await createIndex(path.resolve(process.cwd(), options.source), {
+  rootPage: options.rootPage,
+  icons: defaultIcons,
+}).catch(err => {
+  console.error(err);
+  process.exit(1);
 });

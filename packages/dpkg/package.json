@@ -41,6 +41,9 @@
     "@types/tar-stream": "^2.2.2"
   },
   "workspaces": [
-    "../*"
+    "../ar",
+    "../decompress",
+    "../extends",
+    "../http"
   ]
 }
