@@ -24,7 +24,7 @@
   "dependencies": {
     "@sirherobrine23/extends": "3.6.11",
     "acme-client": "^5.0.0",
-    "got": "^12.6.0",
+    "got": "^13.0.0",
     "jsdom": "^22.0.0",
     "octokit": "^2.0.14",
     "tar-stream": "^3.0.0",
