@@ -1,6 +1,6 @@
 {
   "name": "@sirherobrine23/decompress",
-  "version": "3.6.11",
+  "version": "3.6.12",
   "description": "Compress and Descompress, to decompress, auto detect compress algorithm.",
   "type": "module",
   "main": "src/index.js",
