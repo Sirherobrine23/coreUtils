@@ -31,7 +31,7 @@
   "dependencies": {
     "@sirherobrine23/http": "3.6.11",
     "@sirherobrine23/extends": "3.6.11",
-    "jsdom": "^22.0.0",
+    "jsdom": "^22.1.0",
     "yargs": "^17.7.2"
   },
   "devDependencies": {

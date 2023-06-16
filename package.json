@@ -28,9 +28,9 @@
     "update_version": "node scripts/updateVersion.mjs"
   },
   "devDependencies": {
-    "@types/node": "^20.1.0",
-    "@types/semver": "^7.3.13",
-    "semver": "^7.5.0",
-    "typescript": "^5.0.4"
+    "@types/node": "^20.3.1",
+    "@types/semver": "^7.5.0",
+    "semver": "^7.5.2",
+    "typescript": "^5.1.3"
   }
 }

@@ -24,6 +24,7 @@
     "gzip",
     "bzip2",
     "Zstd",
+    "zstd",
     "Zstandard",
     "deflate"
   ],

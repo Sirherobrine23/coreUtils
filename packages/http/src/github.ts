@@ -1,10 +1,10 @@
-import { jsonRequestBody, streamRequest, httpCoreError } from "./main.js";
-import { homedir } from "node:os";
-import { Octokit } from "octokit";
-import stream from "node:stream";
-import path from "node:path";
-import yaml from "yaml";
 import fs from "node:fs/promises";
+import { homedir } from "node:os";
+import path from "node:path";
+import stream from "node:stream";
+import { Octokit } from "octokit";
+import yaml from "yaml";
+import { httpCoreError, jsonRequestBody, streamRequest } from "./main.js";
 
 export type User = Awaited<ReturnType<Octokit["rest"]["users"]["list"]>>["data"][number];
 export async function getUserInfo(token: string) {
@@ -22,7 +22,7 @@ export async function testToken(token: string) {
 let __githubTokenTmp: string;
 let __githubUserTmp: User;
 if (process.env.GITHUB_SECRET) __githubTokenTmp = process.env.GITHUB_SECRET;
-else if(process.env.GITHUB_TOKEN) __githubTokenTmp = process.env.GITHUB_TOKEN;
+else if (process.env.GITHUB_TOKEN) __githubTokenTmp = process.env.GITHUB_TOKEN;
 else {
   for (const filePath of ([path.join(homedir(), ".config/gh/hosts.yml"), path.join(homedir(), "AppData", "Roaming", "GitHub CLI", "hosts.yml")])) {
     try {
@@ -35,7 +35,7 @@ else {
         // console.warn("Github token from Github CLI");
         __githubTokenTmp = file["github.com"].oauth_token;
       }
-    } catch {}
+    } catch { }
   }
 }
 
@@ -46,12 +46,12 @@ if (__githubTokenTmp) {
 /**
  * Github token from GITHUB_SECRET or GITHUB_TOKEN, or also from `gh` (if authenticated).
  */
-export const githubToken = __githubTokenTmp||null;
+export const githubToken = __githubTokenTmp || null;
 
 /**
  * If githubToken is valid export user info, else set `null`.
  */
-export const githubUserToken = __githubUserTmp||null;
+export const githubUserToken = __githubUserTmp || null;
 
 // Export types from Octokit
 export type rateLimitObject = Awaited<ReturnType<Octokit["rest"]["rateLimit"]["get"]>>["data"];
@@ -77,26 +77,28 @@ export type githubTree = {
   }))[],
 };
 
-export async function repositoryManeger(owner: string, repository: string, relOptions?: {apiUrl?: string, uploadUrl?: string, token?: string}) {
+export async function repositoryManeger(owner: string, repository: string, relOptions?: { apiUrl?: string, uploadUrl?: string, token?: string }) {
   relOptions ||= {
     token: githubToken,
     apiUrl: "api.github.com",
     uploadUrl: "uploads.github.com"
   };
+
+  // Add default if not set
   relOptions.token ||= githubToken;
   relOptions.apiUrl ||= "api.github.com";
   relOptions.uploadUrl ||= "uploads.github.com";
 
   // Check if exists
-  await jsonRequestBody(new URL(path.posix.join("/repos", owner, repository), `https://${relOptions.apiUrl}`), {headers: relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {}}).catch((err: httpCoreError) => {
+  await jsonRequestBody(new URL(path.posix.join("/repos", owner, repository), `https://${relOptions.apiUrl}`), { headers: relOptions.token ? { Authorization: `Bearer ${relOptions.token}` } : {} }).catch((err: httpCoreError) => {
     if (err.httpCode === 404) throw new Error("Repository not exists");
-    else if (err.httpCode === 403) throw new Error("Rate limit max, wait "+err.headers["x-ratelimit-reset"]);
+    else if (err.httpCode === 403) throw new Error("Rate limit max, wait " + err.headers["x-ratelimit-reset"]);
     else if (err.httpCode === 401) throw new Error("Invalid token");
     else throw err;
   });
 
   // Octokit
-  const octokit = new Octokit({auth: relOptions.token});
+  const octokit = new Octokit({ auth: relOptions.token });
 
   /**
    * Get all branchs
@@ -108,11 +110,11 @@ export async function repositoryManeger(owner: string, repository: string, relOp
         page: next++,
       },
       headers: {
-        ...(relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {}),
+        ...(relOptions.token ? { Authorization: `Bearer ${relOptions.token}` } : {}),
       },
     }).then(async data => data.length > 0 ? call().then((data2: braches[]) => data.concat(data2)) : data).catch((err: httpCoreError) => {
       if (err.httpCode === 404) throw new Error("Repository not exists");
-      else if (err.httpCode === 403) throw new Error("Rate limit max, wait "+err.headers["x-ratelimit-reset"]);
+      else if (err.httpCode === 403) throw new Error("Rate limit max, wait " + err.headers["x-ratelimit-reset"]);
       else if (err.httpCode === 401) throw new Error("Invalid token");
       else throw err;
     });
@@ -126,11 +128,11 @@ export async function repositoryManeger(owner: string, repository: string, relOp
   async function getBranchInfo(branch: string) {
     return jsonRequestBody<branchInfo[]>(new URL(path.posix.join("/repos", owner, repository, "branches", branch), `https://${relOptions.apiUrl}`), {
       headers: {
-        ...(relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {}),
+        ...(relOptions.token ? { Authorization: `Bearer ${relOptions.token}` } : {}),
       },
     }).catch((err: httpCoreError) => {
       if (err.httpCode === 404) throw new Error("Branch not exists");
-      else if (err.httpCode === 403) throw new Error("Rate limit max, wait "+err.headers["x-ratelimit-reset"]);
+      else if (err.httpCode === 403) throw new Error("Rate limit max, wait " + (new Date(Number(err.headers["x-ratelimit-reset"]))).toString());
       else if (err.httpCode === 401) throw new Error("Invalid token");
       else throw err;
     });
@@ -139,7 +141,7 @@ export async function repositoryManeger(owner: string, repository: string, relOp
   async function getTree(branch: string) {
     return jsonRequestBody<githubTree>(new URL(path.posix.join("/repos", owner, repository, "git/trees", branch), `https://${relOptions.apiUrl}`), {
       headers: {
-        ...(relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {}),
+        ...(relOptions.token ? { Authorization: `Bearer ${relOptions.token}` } : {}),
       },
       query: {
         recursive: true
@@ -150,12 +152,12 @@ export async function repositoryManeger(owner: string, repository: string, relOp
           tg.getFile = (): stream.Readable => {
             return new (class rawFile extends stream.Readable {
               constructor() {
-                super({read(){}});
+                super({ read() { } });
                 (async () => {
                   return (await streamRequest(new URL(path.posix.join(owner, repository, branch, tg.path), "https://raw.githubusercontent.com"), {
-                    headers: relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {},
-                    query: {token: relOptions.token}
-                  })).on("data", data => this.push(data, "binary")).once("close", () =>  this.push(null)).on("error", this.emit.bind(this, "error"));
+                    headers: relOptions.token ? { Authorization: `Bearer ${relOptions.token}` } : {},
+                    query: { token: relOptions.token }
+                  })).on("data", data => this.push(data, "binary")).once("close", () => this.push(null)).on("error", this.emit.bind(this, "error"));
                 })().catch(err => {
                   this.emit("error", err);
                   this.push(null);
@@ -169,7 +171,7 @@ export async function repositoryManeger(owner: string, repository: string, relOp
       return res;
     }, (err: httpCoreError) => {
       if (err.httpCode === 404) throw new Error("Branch not exists");
-      else if (err.httpCode === 403) throw new Error("Rate limit max, wait "+err.headers["x-ratelimit-reset"]);
+      else if (err.httpCode === 403) throw new Error("Rate limit max, wait " + err.headers["x-ratelimit-reset"]);
       else if (err.httpCode === 401) throw new Error("Invalid token");
       else throw err;
     });
@@ -182,11 +184,11 @@ export async function repositoryManeger(owner: string, repository: string, relOp
         page: next++,
       },
       headers: {
-        ...(relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {}),
+        ...(relOptions.token ? { Authorization: `Bearer ${relOptions.token}` } : {}),
       },
     }).then(async data => data.length > 0 ? call().then((data2: braches[]) => data.concat(data2)) : data).catch((err: httpCoreError) => {
       if (err.httpCode === 404) throw new Error("Repository not exists");
-      else if (err.httpCode === 403) throw new Error("Rate limit max, wait "+err.headers["x-ratelimit-reset"]);
+      else if (err.httpCode === 403) throw new Error("Rate limit max, wait " + err.headers["x-ratelimit-reset"]);
       else if (err.httpCode === 401) throw new Error("Invalid token");
       else throw err;
     });
@@ -211,19 +213,19 @@ export async function repositoryManeger(owner: string, repository: string, relOp
    * @param tagName - Release ID
    */
   async function getRelease(tagName: number): Promise<githubRelease>;
-  async function getRelease(tagName?: string|number): Promise<githubRelease[]|githubRelease> {
+  async function getRelease(tagName?: string | number): Promise<githubRelease[] | githubRelease> {
     if (tagName) {
       if (typeof tagName === "number") {
         if (tagName <= 0) throw new Error("Invalid release ID");
         else return jsonRequestBody(new URL(path.posix.join("/repos", owner, repository, "releases", tagName.toString()), `https://${relOptions.apiUrl}`), {
-          headers: relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {},
+          headers: relOptions.token ? { Authorization: `Bearer ${relOptions.token}` } : {},
         });
       }
       else if (tagName === "__latest__") return jsonRequestBody(new URL(path.posix.join("/repos", owner, repository, "releases/latest"), `https://${relOptions.apiUrl}`), {
-        headers: relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {},
+        headers: relOptions.token ? { Authorization: `Bearer ${relOptions.token}` } : {},
       });
       else return jsonRequestBody(new URL(path.posix.join("/repos", owner, repository, "releases/tags", tagName), `https://${relOptions.apiUrl}`), {
-        headers: relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {},
+        headers: relOptions.token ? { Authorization: `Bearer ${relOptions.token}` } : {},
       });
     }
     let next = 1;
@@ -233,39 +235,42 @@ export async function repositoryManeger(owner: string, repository: string, relOp
         page: next++,
       },
       headers: {
-        ...(relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {}),
+        ...(relOptions.token ? { Authorization: `Bearer ${relOptions.token}` } : {}),
       },
     }).then(data => data.length > 0 ? call().then(data2 => data.concat(data2)) : data);
     return call();
   }
 
-  async function manegerRelease(tagName: string, options?: {releaseName?: string, releaseBody?: string, type?: "draft"|"preRelease"}) {
+  async function manegerRelease(tagName: string, options?: { releaseName?: string, releaseBody?: string, type?: "draft" | "preRelease" }) {
     options ||= {};
     // File assests
     const relAssests = new Map<string, githubRelease["assets"][number]>();
     // Release ID
     let relID: number;
 
-    if (await getRelease(tagName).then(({assets, id}) => {relID = id; assets.map(assest => relAssests.set(assest.name, assest)); return false;}, () => true)) {
+    if (await getRelease(tagName).then(({ assets, id }) => { relID = id; assets.map(assest => relAssests.set(assest.name, assest)); return false; }, () => true)) {
       if (tagName === "__latest__") throw new Error("Create release, not allow to create this!");
-      await octokit.rest.repos.createRelease({
-        owner, repo: repository,
-        tag_name: tagName,
-        name: options.releaseName || tagName,
-        body: options.releaseBody,
-        draft: options.type === "draft",
-        prerelease: options.type === "preRelease"
-      }).then(({data: {id}}) => relID = id);
+      await jsonRequestBody<githubRelease>(new URL(path.posix.join("/repos", owner, repository, "releases"), `https://${relOptions.apiUrl}`), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${relOptions.token}`, "Content-Type": "application/json" },
+        body: {
+          tag_name: tagName,
+          name: options.releaseName || tagName,
+          draft: options.type === "draft",
+          prerelease: options.type === "preRelease",
+          body: options.releaseBody,
+        }
+      }).then(({ id }) => relID = id);
     }
 
     // Latest sync to update files assests
     let latestSync = Date.now();
 
     /** Update release */
-    async function updateRelease(rel: {tagName?: string, targetCommitish?: string, releaseName?: string, releaseBody?: string, type?: "draft"|"preRelease"}) {
+    async function updateRelease(rel: { tagName?: string, targetCommitish?: string, releaseName?: string, releaseBody?: string, type?: "draft" | "preRelease" }) {
       await jsonRequestBody<githubRelease>(new URL(path.posix.join("/repos", owner, repository, "releases", relID.toString()), `https://${relOptions.apiUrl}`), {
         method: "PATCH",
-        headers: {Authorization: `Bearer ${relOptions.token}`},
+        headers: { Authorization: `Bearer ${relOptions.token}` },
         body: {
           tag_name: rel.tagName,
           target_commitish: rel.targetCommitish,
@@ -284,7 +289,7 @@ export async function repositoryManeger(owner: string, repository: string, relOp
 
     /** Delete file from release assests */
     async function deleteAsset(fileName: string) {
-      if ((Date.now() - latestSync) >= 5000) await getRelease(relID).then(({assets}) => {relAssests.clear(); assets.map(assest => relAssests.set(assest.name, assest)); latestSync = Date.now();});
+      if ((Date.now() - latestSync) >= 5000) await getRelease(relID).then(({ assets }) => { relAssests.clear(); assets.map(assest => relAssests.set(assest.name, assest)); latestSync = Date.now(); });
       if (relAssests.has(fileName)) await octokit.rest.repos.deleteReleaseAsset({
         owner, repo: repository,
         asset_id: relAssests.get(fileName).id,
@@ -296,15 +301,17 @@ export async function repositoryManeger(owner: string, repository: string, relOp
 
     /** Get release file assest */
     async function getAssest(fileName: string) {
-      if ((Date.now() - latestSync) >= 5000) await getRelease(relID).then(({assets}) => {relAssests.clear(); assets.map(assest => relAssests.set(assest.name, assest)); latestSync = Date.now();});
+      if ((Date.now() - latestSync) >= 5000) await getRelease(relID).then(({ assets }) => { relAssests.clear(); assets.map(assest => relAssests.set(assest.name, assest)); latestSync = Date.now(); });
       if (!relAssests.has(fileName)) throw new Error("File not exists");
       return stream.Readable.from(await streamRequest(relAssests.get(fileName).browser_download_url, {
-        headers: relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {},
+        headers: relOptions.token ? { Authorization: `Bearer ${relOptions.token}` } : {},
       }));
     }
 
     /**
      * Upload file to release
+     *
+     * watch `fileAssest` to get Github release assest.
      *
      * @throws get on `error` event.
      *
@@ -336,14 +343,18 @@ export async function repositoryManeger(owner: string, repository: string, relOp
             }
           }).then(rel => {
             relAssests.set(rel.name, rel);
+            this.emit("fileAssest", rel);
             this.end();
-          }, err => this.emit("error", err));
+          }, (err) => {
+            this.emit("error", err);
+            this.end();
+          });
         }
       })();
     }
 
     return {
-      getLocaAssets: () => Array.from(relAssests.values()),
+      getLocaAssets: () => Array.from(relAssests.keys()).reduce<Record<string, githubRelease["assets"][number]>>((acc, key) => { acc[key] = relAssests.get(key); return acc; }, {}),
       updateRelease,
       uploadAsset,
       deleteAsset,
@@ -362,12 +373,12 @@ export async function repositoryManeger(owner: string, repository: string, relOp
       getRawFile(branch: string, filePath: string): stream.Readable {
         return new (class rawFile extends stream.Readable {
           constructor() {
-            super({read(){}});
+            super({ read() { } });
             (async () => {
               return (await streamRequest(new URL(path.posix.join(owner, repository, branch, filePath), "https://raw.githubusercontent.com"), {
-                headers: relOptions.token ? {Authorization: `Bearer ${relOptions.token}`} : {},
-                query: {token: relOptions.token}
-              })).on("data", data => this.push(data, "binary")).once("close", () =>  this.push(null)).on("error", this.emit.bind(this, "error"));
+                headers: relOptions.token ? { Authorization: `Bearer ${relOptions.token}` } : {},
+                query: { token: relOptions.token }
+              })).on("data", data => this.push(data, "binary")).once("close", () => this.push(null)).on("error", this.emit.bind(this, "error"));
             })().catch(err => {
               this.emit("error", err);
               this.push(null);
