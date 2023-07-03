@@ -22,7 +22,7 @@
     "postpack": "tsc --build --clean"
   },
   "dependencies": {
-    "@googleapis/drive": "^5.1.0",
+    "@googleapis/drive": "^6.0.0",
     "@sirherobrine23/extends": "3.6.12",
     "@sirherobrine23/http": "3.6.12",
     "chokidar": "^3.5.3",
