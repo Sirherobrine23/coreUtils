@@ -26,7 +26,7 @@
     "@sirherobrine23/extends": "3.6.12",
     "@sirherobrine23/http": "3.6.12",
     "chokidar": "^3.5.3",
-    "google-auth-library": "^8.8.0",
+    "google-auth-library": "^9.0.0",
     "oci-common": "^2.62.2",
     "oci-objectstorage": "^2.62.2"
   },
