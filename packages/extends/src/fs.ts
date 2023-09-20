@@ -4,6 +4,8 @@ import { finished } from "node:stream/promises";
 import path from "node:path";
 import fs from "node:fs/promises";
 
+export { constants, createReadStream, createWriteStream, watchFile } from "node:fs";
+export * from "node:fs/promises";
 export type dirRecursive = {path: string, stat: Stats};
 
 export async function exists(filePath: string) {

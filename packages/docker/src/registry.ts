@@ -6,7 +6,7 @@ import { extendsCrypto } from "@sirherobrine23/extends";
 import { Readable } from "node:stream";
 import { finished } from "node:stream/promises";
 import { tmpdir } from "node:os";
-import tarStream from "tar-stream";
+import tar from "tar";
 import crypto from "node:crypto";
 import path from "node:path";
 
@@ -214,7 +214,7 @@ export class v2 {
    */
   async extractLayer(ref: string) {
     if (!validateRef(ref)) throw new Error("Invalid reference name or sha256!");
-    return (await this.getBlob(ref)).pipe(decompressStream()).pipe(tarStream.extract());
+    return (await this.getBlob(ref)).pipe(decompressStream()).pipe(tar.extract({}));
   }
 
   /**
@@ -439,17 +439,17 @@ export class v2 {
      * @returns
      */
     const createBlob = (compress: Exclude<Compressors, "deflate"|"xz">) => {
-      const tar = tarStream.pack();
+      const tarCreate = tar.replace({  });
       let filePath: string;
-      const filePipe = tar.pipe(compressStream(compress)).pipe(createWriteStream((filePath = path.join(tmpLocation, crypto.randomBytes(8).toString("hex")))));
+      const filePipe = tarCreate.pipe(compressStream(compress)).pipe(createWriteStream((filePath = path.join(tmpLocation, crypto.randomBytes(8).toString("hex")))));
       const annotations = new Map<string, string>();
       return Object.freeze({
         annotations,
         addEntry(headers: tarStream.Headers) {
-          return tar.entry(headers);
+          return tarCreate.entry(headers);
         },
         async finalize() {
-          tar.finalize();
+          tarCreate.finalize();
           await finished(filePipe, {error: true});
           const size = (await fs.lstat(filePath)).size;
           const digest = await blobUpload(size, (start, end) => createReadStream(filePath, {start, end}));

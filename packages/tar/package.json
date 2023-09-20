@@ -1,36 +1,30 @@
 {
-  "name": "@sirherobrine23/docker-registry",
+  "name": "@sirherobrine23/tar",
   "version": "3.6.12",
-  "description": "docker/OCI registry Publish and Pull images directly nodejs.",
+  "description": "tar",
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
   "author": "Matheus Sampaio Queiroga <srherobrine20@gmail.com> (https://sirherobrine23.org/)",
   "license": "GPL-2.0",
-  "homepage": "https://github.com/Sirherobrine23/coreUtils/tree/main/packages/docker#readme",
-  "keywords": [
-    "docker",
-    "registry"
-  ],
+  "homepage": "https://github.com/Sirherobrine23/coreUtils#readme",
+  "keywords": [],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Sirherobrine23/coreUtils.git",
-    "directory": "packages/docker"
+    "directory": "packages/tar"
   },
   "bugs": {
     "url": "https://github.com/Sirherobrine23/coreUtils/issues"
+  },
+  "dependencies": {
+    "@sirherobrine23/extends": "^3.6.12"
   },
   "scripts": {
     "prepack": "tsc --build --clean && tsc --build",
     "postpack": "tsc --build --clean"
   },
-  "dependencies": {
-    "@sirherobrine23/decompress": "3.6.12",
-    "@sirherobrine23/http": "3.6.12",
-    "tar": "^6.2.0"
-  },
   "workspaces": [
-    "../descompress",
-    "../http"
+    "../extends"
   ]
 }

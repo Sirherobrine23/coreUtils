@@ -1,11 +1,10 @@
-import { parseControl, debianControl } from "./dpkg.js";
-import { finished } from "stream/promises";
-import EventEmitter from "events";
 import decompress from "@sirherobrine23/decompress";
+import { extendsStream } from "@sirherobrine23/extends";
 import coreHTTP from "@sirherobrine23/http";
 import openpgp from "openpgp";
-import stream from "stream";
-import path from "path";
+import path from "node:path";
+import { finished } from "node:stream/promises";
+import { debianControl, parseControl } from "./dpkg.js";
 
 type Sums = {[T in ("MD5Sum"|"SHA512"|"SHA256"|"SHA1")]?: {hash: string, size: number, path: string}[]};
 export interface packageObject extends Sums {
@@ -23,6 +22,11 @@ export interface packageObject extends Sums {
   Description?: string;
 }
 
+/**
+ * Parse Release string
+ * @param sourceFile - Config string
+ * @returns
+ */
 export function parseRelease<T = packageObject>(sourceFile: string): T {
   /* pretty tabs */ sourceFile = sourceFile.replace(/\t/gi, "  ");
   let previus: string;
@@ -103,29 +107,13 @@ export function parseSourceList(sourceFile: string): sourceList {
   }, [] as sourceList);
 }
 
-export interface packageStream extends stream.Writable {
-  on(event: "close", listener: () => void): this;
-  on(event: "drain", listener: () => void): this;
-  on(event: "error", listener: (err: Error) => void): this;
-  on(event: "finish", listener: () => void): this;
-  on(event: "pipe", listener: (src: stream.Readable) => void): this;
-  on(event: "unpipe", listener: (src: stream.Readable) => void): this;
-  on(event: "entry", listener: (control: debianControl) => void): this;
-  on(event: string | symbol, listener: (...args: any[]) => void): this;
-
-  once(event: "close", listener: () => void): this;
-  once(event: "drain", listener: () => void): this;
-  once(event: "error", listener: (err: Error) => void): this;
-  once(event: "finish", listener: () => void): this;
-  once(event: "pipe", listener: (src: stream.Readable) => void): this;
-  once(event: "unpipe", listener: (src: stream.Readable) => void): this;
-  once(event: "entry", listener: (control: debianControl) => void): this;
-  once(event: string | symbol, listener: (...args: any[]) => void): this;
-}
-
-export function parsePackages(): packageStream {
+/**
+ * Parse Component Package file, example: `http://ftp.br.debian.org/debian/dists/sid/main/binary-all/Packages`
+ * @returns Stream writable
+ */
+export function parsePackages() {
   let oldBuffer: Buffer;
-  return new stream.Writable({
+  return new extendsStream.Writable<{entry(control: debianControl): void}>({
     write(chunk: Buffer, encoding, callback) {
       if (!(Buffer.isBuffer(chunk))) chunk = Buffer.from(chunk, encoding);
       if (oldBuffer) {chunk = Buffer.concat([oldBuffer, chunk]); oldBuffer = null;}
@@ -149,21 +137,7 @@ export function parsePackages(): packageStream {
   });
 }
 
-export declare interface packageList extends EventEmitter {
-  emit(event: "error", err: any): boolean;
-  on(event: "error", fn: (err: any) => void): this;
-  once(event: "error", fn: (err: any) => void): this;
-
-  emit(event: "close"|"end"): boolean;
-  on(event: "close"|"end", fn: () => void): this;
-  once(event: "close"|"end", fn: () => void): this;
-
-  emit(event: "package", src: string, distname: string, componentName: string, arch: string, control: debianControl): boolean;
-  on(event: "package", fn: (src: string, distname: string, componentName: string, arch: string, control: debianControl) => void): this;
-  once(event: "package", fn: (src: string, distname: string, componentName: string, arch: string, control: debianControl) => void): this;
-}
-
-export class packageList extends EventEmitter {
+export class packageList extends extendsStream.EventEmitter<{ end(): void, close(): void, package(src: string, distName: string, component: string, arch: string, control: debianControl): void }> {
   constructor(aptSrc: sourceList) {
     super({captureRejections: true});
     (async () => {
