@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import stream from "node:stream";
+import { Writable, nodeStream as stream } from "./stream.js";
 
 export type hashAlgorithm =                            "sha1" | "sha256" | "sha512" | "md5";
 const ALGORITHM_MAP: (hashAlgorithm|"all")[] = ["all", "sha1",  "sha256",  "sha512",  "md5"];
@@ -11,37 +11,9 @@ export type hashObject = {
   }
 };
 
-export declare interface hashWrite extends stream.Writable {
-  on(event: "close", listener: () => void): this;
-  once(event: "close", listener: () => void): this;
-
-  on(event: "drain", listener: () => void): this;
-  once(event: "drain", listener: () => void): this;
-
-  on(event: "error", listener: (err: Error) => void): this;
-  once(event: "error", listener: (err: Error) => void): this;
-
-  on(event: "finish", listener: () => void): this;
-  once(event: "finish", listener: () => void): this;
-
-  on(event: "pipe", listener: (src: stream.Readable) => void): this;
-  once(event: "pipe", listener: (src: stream.Readable) => void): this;
-
-  on(event: "unpipe", listener: (src: stream.Readable) => void): this;
-  once(event: "unpipe", listener: (src: stream.Readable) => void): this;
-
-  on(event: "hashObject", listener: (hash: hashObject) => void): this;
-  once(event: "hashObject", listener: (hash: hashObject) => void): this;
-
-  on(event: hashAlgorithm, listener: (hash: string) => void): this;
-  once(event: hashAlgorithm, listener: (hash: string) => void): this;
-
-  on(event: string | symbol, listener: (...args: any[]) => void): this;
-  once(event: string | symbol, listener: (...args: any[]) => void): this;
-}
-
+export type hashWrite = Writable<{ hashObject(hash: hashObject): void } & Record<hashAlgorithm, (hash: string) => void>>;
 export function createHash(target?: "all"|hashAlgorithm, digestText?: crypto.BinaryToTextEncoding): hashWrite {
-  if (!ALGORITHM_MAP.includes(target)) target = "all";
+  if (!(ALGORITHM_MAP.includes(target))) target = "all";
   const crypHash: {[U in hashAlgorithm]?: crypto.Hash} = {};
   // sha512
   if ((["all", "sha512"]).includes(target)) crypHash.sha512 = crypto.createHash("sha512");

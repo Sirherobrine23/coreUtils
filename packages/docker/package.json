@@ -27,10 +27,10 @@
   "dependencies": {
     "@sirherobrine23/decompress": "3.6.12",
     "@sirherobrine23/http": "3.6.12",
-    "tar-stream": "^3.0.0"
+    "tar-stream": "^3.1.6"
   },
   "devDependencies": {
-    "@types/tar-stream": "^2.2.2"
+    "@types/tar-stream": "^2.2.3"
   },
   "workspaces": [
     "../descompress",
