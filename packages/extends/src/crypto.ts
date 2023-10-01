@@ -66,22 +66,24 @@ export async function createHashAsync(from: stream.Readable|stream.Transform|str
   });
 }
 
-export class randomBytesStream extends stream.Readable {
-  constructor(fileSize: number, options?: stream.ReadableOptions) {
-    super({
-      ...options,
-      emitClose: false,
-      autoDestroy: true,
-      objectMode: false,
-      read(_size) {
-        if (fileSize > 0) {
-          const dtr = crypto.randomBytes(Math.max(0, Math.min(Math.max(1, this.readableHighWaterMark), fileSize)));
-          fileSize = fileSize - dtr.byteLength;
-          if (!(this.closed||this.destroyed)) this.push(dtr);
-          return;
-        }
-        this.push(null);
-      },
-    });
-  }
+export function randomBytesStream(size: number): stream.Readable {
+  size = Math.abs(size);
+  if (!(size > 0)) throw new Error("Invalid size");
+  let producedSize = 0;
+  return new stream.Readable({
+    autoDestroy: true, emitClose: true,
+    read(readSize) {
+			let shouldEnd = false;
+			if ((producedSize + readSize) >= size) {
+				readSize = size - producedSize;
+				shouldEnd = true;
+			}
+			crypto.randomBytes(readSize, (error, buffer): any => {
+				if (error) return this.emit("error", error);
+				producedSize += readSize;
+				this.push(buffer);
+				if (shouldEnd) this.push(null);
+			});
+		},
+  });
 }

@@ -1,187 +1,90 @@
-import { drive, drive_v3 } from "@googleapis/drive";
-import { OAuth2Client } from "google-auth-library";
-import path from "node:path";
-import stream from "node:stream";
+import { auth, drive, drive_v3 } from "@googleapis/drive";
+import { extendStream } from "@sirherobrine23/extends";
+import path from "path";
 
-/** Google Credential */
-export type googleCredential = Parameters<OAuth2Client["setCredentials"]>[0];
-export type googleFile = {
-  id: string,
-  name: string,
-  size: number,
-  isTrashedFile: boolean,
-  parent?: string,
-  Dates: {
-    created: Date,
-    modified: Date,
-  }
-};
-
-export interface fileUpload extends stream.Writable {
-  on(event: "close", listener: () => void): this;
-  on(event: "drain", listener: () => void): this;
-  on(event: "error", listener: (err: Error) => void): this;
-  on(event: "finish", listener: () => void): this;
-  on(event: "pipe", listener: (src: stream.Readable) => void): this;
-  on(event: "unpipe", listener: (src: stream.Readable) => void): this;
-  on(event: "gfile", listener: (fileInfo: googleFile) => void): this;
-  on(event: string | symbol, listener: (...args: any[]) => void): this;
-
-  once(event: "close", listener: () => void): this;
-  once(event: "drain", listener: () => void): this;
-  once(event: "error", listener: (err: Error) => void): this;
-  once(event: "finish", listener: () => void): this;
-  once(event: "pipe", listener: (src: stream.Readable) => void): this;
-  once(event: "unpipe", listener: (src: stream.Readable) => void): this;
-  once(event: "gfile", listener: (fileInfo: googleFile) => void): this;
-  once(event: string | symbol, listener: (...args: any[]) => void): this;
-}
-
-export interface googleAuth {
+export type OAuth2Client = typeof auth["OAuth2"]["prototype"];
+export type googleCredential = Parameters<typeof auth.OAuth2["prototype"]["setCredentials"]>[0];
+export interface GoogleAuth {
   clientID: string;
   clientSecret: string;
-  redirectURL: string;
   token?: googleCredential;
-  authUrlCallback(authUrl: string, callback: (code) => void): void|Promise<void>;
-  tokenCallback(token: googleCredential): void|Promise<void>;
+  authUrlCallback?(redirect: (redirectUrl: string, callback: (authUrl: string, callback: (err: any, code?: string) => void) => void) => void): void;
+  tokenCallback?(token: googleCredential): void|Promise<void>;
 }
 
-export async function createAuth(config: googleAuth) {
-  const { clientID, clientSecret, token, redirectURL, authUrlCallback, tokenCallback } = config;
+export async function createAuth(config: GoogleAuth) {
+  const {
+    clientID,
+    clientSecret,
+    token,
+    authUrlCallback,
+    tokenCallback
+  } = config;
   if (!clientID) throw new Error("Required Google Client ID");
   else if (!clientSecret) throw new Error("Required Google Client Secret");
 
   // Oauth2
-  let auth = new OAuth2Client(clientID, clientSecret);
-  if (token?.access_token || token?.refresh_token) auth.setCredentials(token);
+  let oauth2 = new auth.OAuth2(clientID, clientSecret);
+  if (token && token?.access_token || token?.refresh_token) oauth2.setCredentials(token);
   else {
-    auth = new OAuth2Client(clientID, clientSecret, redirectURL);
-    const url = auth.generateAuthUrl({access_type: "offline", scope: ["https://www.googleapis.com/auth/drive"]});
     await new Promise<void>((resolve, reject) => {
-      return Promise.resolve().then(async () => authUrlCallback(url, (code) => {
-        auth.getToken(code).then(async ({tokens}) => {
-          auth.setCredentials(tokens);
-          return Promise.resolve().then(() => tokenCallback(tokens));
-        }).then(resolve, reject);
-      })).then(() => {}, reject);
+      if (typeof authUrlCallback !== "function") return reject(new Error("Set valid authUrlCallback"));
+      authUrlCallback((redirectUrl, callback) => {
+        oauth2 = new auth.OAuth2(clientID, clientSecret, redirectUrl);
+        const url = oauth2.generateAuthUrl({access_type: "offline", scope: ["https://www.googleapis.com/auth/drive"]});
+        callback(url, (err, code) => {
+          if (err) return reject(err);
+          return oauth2.getToken(code).then(token => {
+            tokenCallback(token.tokens);
+            oauth2.setCredentials(token.tokens);
+            return resolve();
+          }, reject);
+        });
+      })
     });
   }
 
-  return auth;
+  return oauth2;
 }
 
-export type treeTmp = {
-  id: string;
-  name: string;
-  info: drive_v3.Schema$File;
-  parents: treeTmp[]
-};
-
-export interface googleOptions {
+export interface GoogleOptions {
   oauth?: OAuth2Client;
-  authConfig?: googleAuth;
+  authConfig?: GoogleAuth;
 };
 
-/**
- * Create client to Google Driver
- * @returns
- */
-export async function GoogleDriver(config: googleOptions) {
-  if (!config) throw new Error("Require config to sign up Google Driver");
+export type FileTree = {
+  name: string;
+  id: string;
+  ownedByMe: boolean;
+  date: {
+    create: Date;
+    modify: Date;
+  };
+  oweners: {
+    emailAddress: string;
+    name: string;
+  }[];
+  tree?: FileTree[];
+};
+
+export type FilePosix = {
+  name: string;
+  path: string;
+  id: string;
+  ownedByMe: boolean;
+  date: {
+    create: Date;
+    modify: Date;
+  };
+  oweners: {
+    emailAddress: string;
+    name: string;
+  }[];
+};
+
+export async function GoogleDriver(config: GoogleOptions) {
   const { oauth = await createAuth(config.authConfig) } = config;
-  const { files } = drive({version: "v3", auth: oauth});
-
-  /**
-   *
-   * @returns Array with folder tree
-   */
-  async function folderTree() {
-    const folderList: drive_v3.Schema$FileList["files"] = [];
-    let nextPageToken: string;
-    while (true) {
-      const { data } = await files.list({
-        q: "mimeType='application/vnd.google-apps.folder'",
-        spaces: "drive",
-        fields: "*, nextPageToken",
-        pageSize: 1000,
-        pageToken: nextPageToken,
-      });
-      folderList.push(...(data.files.filter(file => file.ownedByMe)));
-      if (!(nextPageToken = data.nextPageToken)) break;
-    }
-    console.dir(folderList, {color: true, depth: null});
-    async function cc(id?: string, info?: drive_v3.Schema$File): Promise<treeTmp> {
-      const ff = folderList.filter(file => (file.parents||[]).at(0) === id);
-      return {
-        id,
-        name: info?.name,
-        info,
-        parents: await Promise.all(ff.map(f => cc(f.id, f))),
-      }
-    }
-    const root = (await cc()).parents;
-
-    async function dd(tree: treeTmp, array: string[]): Promise<string[]> {
-      array.push(tree.id);
-      return Promise.all(tree.parents.map(p => dd(p, array))).then(() => array);
-    }
-
-    return {
-      array: await Promise.all(root.map(p => dd(p, []))).then(a => a.sort((b, a) => a.length - b.length)),
-      tree: root
-    };
-  }
-
-  /**
-   * Get files and folder list array from folder
-   *
-   * @param folderID - ID of the folder
-   * @returns
-   */
-  async function listFiles(folderID?: string): Promise<googleFile[]> {
-    let f: string[][];
-    const filesArray = (await folderTree()).array;
-    if (folderID) {
-      const fist = filesArray.find(rel => rel.find(r => r === folderID));
-      if (!fist) throw new Error("Folder not found");
-      f = filesArray.filter(r => r.slice(fist.length-1).at(0) === folderID).map(r => r.slice(fist.length-1));
-    } else f = filesArray;
-
-    let googleFile: googleFile[] = [];
-    const storage: {[key: string]: drive_v3.Schema$File} = {};
-    await Promise.all(f.map(async ids => {
-      let internalFiles: googleFile[] = [];
-      for (let id of ids.reverse()) {
-        let nextPageToken: string = null;
-        while (nextPageToken !== undefined) {
-          const { data } = await files.list({
-            q: `'${id}' in parents`,
-            pageToken: nextPageToken ? nextPageToken : undefined,
-            fields: 'nextPageToken, files(id, name, size, trashed, createdTime, modifiedTime, parents, mimeType)',
-            spaces: "drive",
-            pageSize: 1000,
-          });
-          internalFiles.push(...(data.files.filter(file => file.mimeType !== "application/vnd.google-apps.folder").map(file => ({
-            name: file.name,
-            size: Number(file.size ?? 0),
-            id: file.id,
-            ...(file.parents.at(0) ? {parent: file.parents.at(0)} : {}),
-            isTrashedFile: file.trashed,
-            Dates: {
-              created: new Date(file.createdTime ?? 0),
-              modified: new Date(file.modifiedTime ?? 0)
-            }
-          }))));
-          if (!(nextPageToken = data.nextPageToken)) nextPageToken = undefined;
-        }
-        const folderInfo = storage[id] || (storage[id] = await files.get({fileId: id}).then(e => e.data));
-        internalFiles = internalFiles.map(e => {e.name = path.posix.join(folderInfo.name, e.name); return e;});
-      }
-      googleFile.push(...internalFiles);
-    }));
-
-    return googleFile.sort((a, b) => a.name.split(path.posix.sep).length - b.name.split(path.posix.sep).length);
-  }
+  const driverAPI = drive({version: "v3", auth: oauth });
 
   /**
    * Get file stream
@@ -189,74 +92,160 @@ export async function GoogleDriver(config: googleOptions) {
    * @param fileID - ID of the file
    * @returns
    */
-  async function getFileStream(fileID: string): Promise<stream.Readable> {
+  async function getFile(fileID: string): Promise<extendStream.nodeStream.Readable> {
     // not check to get file ID
-    return (await files.get({alt: "media", fileId: fileID}, {responseType: "stream"})).data;
+    return (await driverAPI.files.get({alt: "media", fileId: fileID}, {responseType: "stream"})).data;
   }
 
   /**
    * Upload file to Google drive
    *
-   * to get file info watch `gfile` event to get `googleFile` object
+   * to get file info watch `fileInfo` event to get `googleFile` object
    *
    * @param fileName - File name
    * @param folderID - folder id if set to folder - optional
    */
-  function uploadFile(fileName: string, folderID?: string): fileUpload {
-    return new class fileUpload extends stream.PassThrough {
-      constructor() {
-        super({autoDestroy: true, emitClose: true});
-        files.create({
-          fields: "id, name, size, trashed, createdTime, modifiedTime, originalFilename, parents, mimeType",
-          requestBody: {
-            name: fileName,
-            ...(folderID ? {parents: [folderID]} : {}),
-          },
-          media: {
-            mimeType: "application/octet-stream",
-            body: stream.Readable.from(this),
-          },
-        }).then(({data: info}) => {
-          const data: googleFile = {
-            id: info.id,
-            name: info.originalFilename ?? info.name,
-            size: Number(info.size ?? 0),
-            isTrashedFile: info.trashed,
-            parent: info.parents.at(-1),
-            Dates: {
-              created: new Date(info.createdTime ?? 0),
-              modified: new Date(info.modifiedTime ?? 0)
-            }
-          }
-          this.emit("gfile", data);
-        }, err => this.emit("error", err));
-      }
-    }
+  function uploadFile(fileName: string, folderID?: string) {
+    return extendStream.WriteToRead<{ fileInfo(file: drive_v3.Schema$File): void }>((read, write) => {
+      driverAPI.files.create({
+        fields: "id, name, size, trashed, createdTime, modifiedTime, originalFilename, parents, mimeType",
+        requestBody: {
+          name: fileName,
+          ...(folderID ? {parents: [folderID]} : {}),
+        },
+        media: {
+          mimeType: "application/octet-stream",
+          body: read,
+        },
+      }).then(({data}) => {
+        write.emit("fileID", data);
+      }, err => write.emit("error", err));
+    });
   }
 
-  async function deleteFile(id: string): Promise<googleFile> {
-    const info = await files.get({
-      fileId: id,
-      fields: "id, name, size, trashed, createdTime, modifiedTime, originalFilename, parents, mimeType",
+  /**
+   * Delete file
+   * @param fileID - File ID
+   * @returns
+   */
+  async function deleteFile(fileID: string): Promise<FilePosix> {
+    const info = await driverAPI.files.get({
+      fileId: fileID,
+      fields: "id, name, createdTime, modifiedTime, oweners, ownedByMe",
     }).then(r => r.data);
-    await files.delete({fileId: info.id});
+    await driverAPI.files.delete({fileId: info.id});
     return {
       id: info.id,
-      name: info.originalFilename ?? info.name,
-      size: Number(info.size ?? 0),
-      isTrashedFile: info.trashed,
-      parent: info.parents.at(-1),
-      Dates: {
-        created: new Date(info.createdTime ?? 0),
-        modified: new Date(info.modifiedTime ?? 0)
-      }
+      name: info.name,
+      path: null,
+      ownedByMe: info.ownedByMe,
+      date: {
+        create: new Date(info.createdTime ?? 0),
+        modify: new Date(info.modifiedTime ?? 0)
+      },
+      oweners: info.owners.map(({emailAddress, displayName}) => ({ emailAddress, name: displayName })),
     };
   }
 
+  /**
+   * Get root dir files and return posix style
+   */
+  function getDirs(): Promise<FilePosix[]>;
+  /**
+   * List files and return posix style
+   * @param folderID - Folder ID
+   */
+  function getDirs(folderID: string): Promise<FilePosix[]>;
+  /**
+   * List files and return posix style
+   * @param folderID - Folder ID
+   */
+  async function getDirs(folderID?: string): Promise<FilePosix[]> {
+    let folders: drive_v3.Schema$File[] = [];
+    let searchs: drive_v3.Schema$FileList;
+    while (!searchs || searchs.nextPageToken) {
+      searchs = (await driverAPI.files.list({
+        fields: "nextPageToken, files(name, id, parents, createdTime, modifiedTime, owners, ownedByMe)",
+        q: "mimeType = 'application/vnd.google-apps.folder'",
+        ...(!folderID?{}: {
+          q: ("").concat("mimeType = 'application/vnd.google-apps.folder' and '", folderID,"' in parents")
+        }),
+        supportsAllDrives: true,
+        pageToken: searchs?.nextPageToken
+      })).data;
+      folders = folders.concat(searchs.files);
+    }
+
+    const folderTree = async (id: string): Promise<FileTree[]> => {
+      const ff = folders.filter(s => (s.parents||[]).includes(id));
+      folders = folders.filter(s => !((s.parents||[]).includes(id)));
+      return Promise.all(ff.map(s => folderTree(s.id).then((d): FileTree => ({
+        id: s.id,
+        name: s.name,
+        ownedByMe: s.ownedByMe,
+        date: {
+          create: new Date(s.createdTime),
+          modify: new Date(s.modifiedTime)
+        },
+        oweners: (s.owners||[]).map(({ emailAddress, displayName }) => ({ emailAddress, name: displayName })),
+        tree: d
+      }))));
+    }
+
+    const fileTree = async (folderTree: FileTree): Promise<FileTree> => {
+      if ((folderTree.tree||[]).length > 0) folderTree.tree = await Promise.all(folderTree.tree.map(async s => fileTree(s)));
+      let searchs: drive_v3.Schema$FileList, folders: drive_v3.Schema$File[] = [];
+      while (!searchs || searchs.nextPageToken) {
+        searchs = (await driverAPI.files.list({ fields: "nextPageToken, files(*)", q: ("").concat("mimeType != 'application/vnd.google-apps.folder' and '", folderTree.id,"' in parents"), supportsAllDrives: true, pageToken: searchs?.nextPageToken })).data;
+        folders = folders.concat(searchs.files);
+      }
+      folderTree.tree = folderTree.tree.concat(folders.map(({id, name, owners, createdTime, modifiedTime, fullFileExtension, fileExtension, ownedByMe}) => ({
+        id,
+        name: name.endsWith(fullFileExtension||fileExtension) ? name : name.concat(fullFileExtension||fileExtension),
+        ownedByMe,
+        date: {
+          create: new Date(createdTime),
+          modify: new Date(modifiedTime)
+        },
+        oweners: (owners||[]).map(({ emailAddress, displayName }) => ({ emailAddress, name: displayName }))
+      })));
+      return folderTree;
+    }
+
+    const toPosix = async (folder: FileTree): Promise<FilePosix[]> => {
+      const a = await Promise.all((folder.tree||[]).map(async s => toPosix(s)));
+      const { id, name, oweners, date, ownedByMe } = folder;
+      return a.map(s => s.map(s => {
+        const d = "/"+s.name;
+        s.path = path.posix.resolve("/", folder.name, (s.path||d).slice(1));
+        return s;
+      })).flat(2).concat({
+        id,
+        name,
+        path: path.posix.resolve("/", name),
+        ownedByMe,
+        date,
+        oweners,
+      });
+    }
+
+    return Promise.all(folders.filter(s => !!folderID || !s.parents).map(async (s): Promise<FileTree> => ({
+      id: s.id,
+      name: s.name,
+      ownedByMe: s.ownedByMe,
+      date: {
+        create: new Date(s.createdTime),
+        modify: new Date(s.modifiedTime)
+      },
+      oweners: (s.owners||[]).map(s => ({ emailAddress: s.emailAddress, name: s.displayName })),
+      tree: await folderTree(s.id)
+    }))).then(s => Promise.all(s.map(async s => toPosix(await fileTree(s))))).then(d => d.flat(2));
+  }
+
   return {
-    listFiles,
-    folderTree,
-    getFileStream,
+    about: async () => { const { storageQuota: { limit, usage, usageInDrive, usageInDriveTrash } } = (await driverAPI.about.get({ fields: "storageQuota" })).data; return { limit: Number(limit), usage: Number(usage), usageInDrive: Number(usageInDrive), usageInDriveTrash: Number(usageInDriveTrash) }; },
+    getDirs,
+    getFile,
     uploadFile,
     deleteFile,
   };

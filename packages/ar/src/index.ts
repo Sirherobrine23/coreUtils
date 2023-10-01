@@ -1,9 +1,9 @@
 import oldFs, { createReadStream, promises as fs } from "node:fs";
-import { extendsFS } from "@sirherobrine23/extends";
+import { extendsFS, extendStream as stream } from "@sirherobrine23/extends";
 import { finished } from "node:stream/promises";
 import { format } from "node:util";
-import stream from "node:stream";
 import path from "node:path";
+import { EventMap, defineEvents } from "@sirherobrine23/extends/src/stream.js";
 
 export type arHeader = {
   name: string,
@@ -48,139 +48,124 @@ export function createHead(filename: string, info: fileInfo) {
   return controlHead;
 }
 
-export class arParseAbstract extends stream.Writable {
+export class arParse<T extends EventMap = {}> extends stream.Writable<defineEvents<{ entry(header: arHeader, stream: stream.nodeStream.Readable): void }>, [T]> {
   #fileStreamSize: number;
   #fileStream?: stream.Readable;
   #oldBuffer?: Buffer;
   #initialHead = true;
-  constructor(entry: (header: arHeader, stream: stream.Readable) => void) {
+  constructor(private entry?: (header: arHeader, stream: stream.nodeStream.Readable) => void) {
     super({
       defaultEncoding: "binary",
       objectMode: false,
       autoDestroy: true,
       decodeStrings: true,
       emitClose: true,
-      highWaterMark: 1024,
-      final: (callback) => {
-        if (this.#fileStream && this.#oldBuffer) {
-          if (!this.#fileStream.destroyed||this.#fileStream.readable) {
-            this.#fileStream.push(this.#oldBuffer.subarray(0, this.#fileStreamSize));
+      highWaterMark: 1024
+    });
+  }
+
+  _destroy(error: Error, callback: (error?: Error) => void): void {
+    if (this.#fileStream && error) this.#fileStream.destroy(error);
+    callback(error);
+  }
+
+  _final(callback: (error?: Error) => void): void {
+    if (this.#fileStream && this.#oldBuffer) {
+      if (!this.#fileStream.destroyed||this.#fileStream.readable) {
+        this.#fileStream.push(this.#oldBuffer.subarray(0, this.#fileStreamSize));
+        this.#fileStream.push(null);
+      }
+    }
+    this.#oldBuffer = undefined;
+    callback();
+  }
+
+  _write(remoteChunk: Buffer, encoding: BufferEncoding, callback: (error?: Error) => void) {
+    let chunk = Buffer.isBuffer(remoteChunk) ? remoteChunk : Buffer.from(remoteChunk, encoding);
+    if (this.#oldBuffer) chunk = Buffer.concat([this.#oldBuffer, chunk]);
+    this.#oldBuffer = undefined;
+    // file signature
+    if (this.#initialHead) {
+      // More buffer to maneger correctly
+      if (chunk.length < 70) {
+        this.#oldBuffer = chunk;
+        return callback();
+      }
+      const signature = chunk.subarray(0, 8).toString("ascii");
+      if (signature !== "!<arch>\n") return callback(new Error(format("Invalid ar file, recived: %O", signature)));
+      this.#initialHead = false;
+      chunk = chunk.subarray(8);
+    }
+
+    // if exists chunk and is not empty save to next request
+    if (chunk.length > 0) {
+      // if exist file stream and chunk is not empty
+      if (this.#fileStream) {
+        const fixedChunk = chunk.subarray(0, this.#fileStreamSize);
+        if (!this.#fileStream.destroyed||this.#fileStream.readable) this.#fileStream.push(fixedChunk);
+        this.#fileStreamSize -= fixedChunk.length;
+        chunk = chunk.subarray(fixedChunk.length);
+        if (this.#fileStreamSize <= 0) {
+          this.#fileStream.push(null);
+          this.#fileStream = undefined;
+        }
+        if (chunk.length <= 0) return callback();
+      }
+    }
+
+    // more buffer
+    if (chunk.length >= 60) {
+      for (let chunkByte = 0; chunkByte < chunk.length; chunkByte++) {
+        const lastByteHead = chunkByte;
+        const fistCharByte = lastByteHead-60;
+        if (fistCharByte < 0) continue;
+        const head = chunk.subarray(fistCharByte, lastByteHead);
+        const name = head.subarray(0, 16).toString("ascii").trim();
+        const time = new Date(parseInt(head.subarray(16, 28).toString("ascii").trim()) * 1000);
+        const owner = parseInt(head.subarray(28, 34).toString("ascii").trim());
+        const group = parseInt(head.subarray(34, 40).toString("ascii").trim());
+        const mode = parseInt(head.subarray(40, 48).toString("ascii").trim());
+        const size = parseInt(head.subarray(48, 58).toString("ascii").trim());
+
+        // One to error
+        if ((!name)||(time.toString() === "Invalid Date")||(isNaN(owner))||(isNaN(group))||(isNaN(mode))||(isNaN(size))) continue;
+        if (head.subarray(58, 60).toString("ascii") !== "`\n") continue;
+
+        if (fistCharByte >= 1) {
+          const chucked = chunk.subarray(0, fistCharByte);
+          if (this.#fileStream && chucked[0] !== 0x0A) {
+            this.#fileStream.push(chucked);
             this.#fileStream.push(null);
           }
         }
-        this.#oldBuffer = undefined;
-        callback();
-      },
-      destroy: (error, callback) => {
-        if (this.#fileStream && error) this.#fileStream.destroy(error);
-        callback(error);
-      },
-      write: (remoteChunk, encoding, callback) => {
-        let chunk = Buffer.isBuffer(remoteChunk) ? remoteChunk : Buffer.from(remoteChunk, encoding);
-        if (this.#oldBuffer) chunk = Buffer.concat([this.#oldBuffer, chunk]);
-        this.#oldBuffer = undefined;
-        // file signature
-        if (this.#initialHead) {
-          // More buffer to maneger correctly
-          if (chunk.length < 70) {
-            this.#oldBuffer = chunk;
-            return callback();
-          }
-          const signature = chunk.subarray(0, 8).toString("ascii");
-          if (signature !== "!<arch>\n") return callback(new Error(format("Invalid ar file, recived: %O", signature)));
-          this.#initialHead = false;
-          chunk = chunk.subarray(8);
+
+        // Cut post header from chunk
+        chunk = chunk.subarray(lastByteHead);
+        if (typeof this.entry === "function" && this.entry.length >= 1) this.entry({name, time, owner, group, mode, size}, (this.#fileStream = new stream.Readable({read() {}})));
+        else this.emit("entry", {name, time, owner, group, mode, size}, (this.#fileStream = new stream.Readable({read() {}})));
+
+        this.#fileStreamSize = size;
+
+        const fileSize = chunk.subarray(0, size);
+        chunk = chunk.subarray(fileSize.length);
+        if (!this.#fileStream.destroyed||this.#fileStream.readable) this.#fileStream.push(fileSize);
+        this.#fileStreamSize -= fileSize.length;
+
+        if (this.#fileStreamSize <= 0) {
+          if (!this.#fileStream.destroyed||this.#fileStream.readable) this.#fileStream.push(null);
+          this.#fileStream = undefined;
+          this.#fileStreamSize = -1;
         }
 
-        // if exists chunk and is not empty save to next request
-        if (chunk.length > 0) {
-          // if exist file stream and chunk is not empty
-          if (this.#fileStream) {
-            const fixedChunk = chunk.subarray(0, this.#fileStreamSize);
-            if (!this.#fileStream.destroyed||this.#fileStream.readable) this.#fileStream.push(fixedChunk);
-            this.#fileStreamSize -= fixedChunk.length;
-            chunk = chunk.subarray(fixedChunk.length);
-            if (this.#fileStreamSize <= 0) {
-              this.#fileStream.push(null);
-              this.#fileStream = undefined;
-            }
-            if (chunk.length <= 0) return callback();
-          }
-        }
-
-        // more buffer
-        if (chunk.length >= 60) {
-          for (let chunkByte = 0; chunkByte < chunk.length; chunkByte++) {
-            const lastByteHead = chunkByte;
-            const fistCharByte = lastByteHead-60;
-            if (fistCharByte < 0) continue;
-            const head = chunk.subarray(fistCharByte, lastByteHead);
-            const name = head.subarray(0, 16).toString("ascii").trim();
-            const time = new Date(parseInt(head.subarray(16, 28).toString("ascii").trim()) * 1000);
-            const owner = parseInt(head.subarray(28, 34).toString("ascii").trim());
-            const group = parseInt(head.subarray(34, 40).toString("ascii").trim());
-            const mode = parseInt(head.subarray(40, 48).toString("ascii").trim());
-            const size = parseInt(head.subarray(48, 58).toString("ascii").trim());
-
-            // One to error
-            if ((!name)||(time.toString() === "Invalid Date")||(isNaN(owner))||(isNaN(group))||(isNaN(mode))||(isNaN(size))) continue;
-            if (head.subarray(58, 60).toString("ascii") !== "`\n") continue;
-
-            if (fistCharByte >= 1) {
-              const chucked = chunk.subarray(0, fistCharByte);
-              if (this.#fileStream && chucked[0] !== 0x0A) {
-                this.#fileStream.push(chucked);
-                this.#fileStream.push(null);
-              }
-            }
-
-            // Cut post header from chunk
-            chunk = chunk.subarray(lastByteHead);
-            entry({name, time, owner, group, mode, size}, (this.#fileStream = new stream.Readable({read() {}})));
-            this.#fileStreamSize = size;
-
-            const fileSize = chunk.subarray(0, size);
-            chunk = chunk.subarray(fileSize.length);
-            if (!this.#fileStream.destroyed||this.#fileStream.readable) this.#fileStream.push(fileSize);
-            this.#fileStreamSize -= fileSize.length;
-
-            if (this.#fileStreamSize <= 0) {
-              if (!this.#fileStream.destroyed||this.#fileStream.readable) this.#fileStream.push(null);
-              this.#fileStream = undefined;
-              this.#fileStreamSize = -1;
-            }
-
-            // Restart loop to check if chunk has more headers
-            chunkByte = 0;
-          }
-        }
-
-        // Get more buffer data
-        if (chunk.length > 0) this.#oldBuffer = chunk;
-        return callback();
+        // Restart loop to check if chunk has more headers
+        chunkByte = 0;
       }
-    });
+    }
+
+    // Get more buffer data
+    if (chunk.length > 0) this.#oldBuffer = chunk;
+    return callback();
   }
-}
-
-export declare interface arParse extends stream.Writable {
-  on(event: "close", listener: () => void): this;
-  on(event: "drain", listener: () => void): this;
-  on(event: "error", listener: (err: Error) => void): this;
-  on(event: "finish", listener: () => void): this;
-  on(event: "pipe", listener: (src: stream.Readable) => void): this;
-  on(event: "unpipe", listener: (src: stream.Readable) => void): this;
-  on(event: "entry", listener: (header: arHeader, stream: stream.Readable) => void): this;
-  on(event: string | symbol, listener: (...args: any[]) => void): this;
-
-  once(event: "close", listener: () => void): this;
-  once(event: "drain", listener: () => void): this;
-  once(event: "error", listener: (err: Error) => void): this;
-  once(event: "finish", listener: () => void): this;
-  once(event: "pipe", listener: (src: stream.Readable) => void): this;
-  once(event: "unpipe", listener: (src: stream.Readable) => void): this;
-  once(event: "entry", listener: (header: arHeader, stream: stream.Readable) => void): this;
-  once(event: string | symbol, listener: (...args: any[]) => void): this;
 }
 
 /**
@@ -195,12 +180,8 @@ export declare interface arParse extends stream.Writable {
   });
  *
  */
-export function parseArStream(): arParse {
-  return new class arParse extends arParseAbstract {
-    constructor() {
-      super((head, str) => this.emit("entry", head, str));
-    }
-  };
+export function parseArStream() {
+  return new arParse();
 }
 
 export class arStream extends stream.Readable {

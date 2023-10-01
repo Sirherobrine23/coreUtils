@@ -37,8 +37,19 @@ export interface EventEmitter<T extends EventMap = {}> extends nodeEventEmitter 
 
 export class EventEmitter extends nodeEventEmitter {};
 
-export interface Readable<T extends EventMap = {}> extends stream.Readable {
+export interface ReadableOptions<T extends EventMap> extends Omit<stream.ReadableOptions, "read"> {
+  read?(this: Readable<T>, size: number): void;
+}
+
+export interface WritableOptions<T extends EventMap> extends Omit<stream.WritableOptions, "write"|"writev"|"final"> {
+  write?(this: Writable<T>, chunk: any, encoding: BufferEncoding, callback: (error?: Error | null) => void): void;
+  writev?(this: Writable<T>, chunks: Array<{ chunk: any; encoding: BufferEncoding; }>, callback: (error?: Error | null) => void): void;
+  final?(this: Writable<T>, callback: (error?: Error | null) => void): void;
+}
+
+export interface Readable<T extends EventMap = {}, A extends EventMap[] = []> extends stream.Readable {
   addListener<K extends EventKey<T>>(eventName: K, fn: T[K]): this;
+  addListener<K extends EventKey<A[number]>>(eventName: K, fn: A[number][K]): this;
   addListener(event: "close", listener: () => void): this;
   addListener(event: "data", listener: (chunk: any) => void): this;
   addListener(event: "end", listener: () => void): this;
@@ -49,6 +60,7 @@ export interface Readable<T extends EventMap = {}> extends stream.Readable {
   addListener(event: string | symbol, listener: (...args: any[]) => void): this;
 
   emit<K extends EventKey<T>>(eventName: K, ...args: Parameters<T[K]>): boolean;
+  emit<K extends EventKey<A[number]>>(eventName: K, ...args: Parameters<A[number][K]>): boolean;
   emit(event: "close"): boolean;
   emit(event: "data", chunk: any): boolean;
   emit(event: "end"): boolean;
@@ -59,6 +71,7 @@ export interface Readable<T extends EventMap = {}> extends stream.Readable {
   emit(event: string | symbol, ...args: any[]): boolean;
 
   on<K extends EventKey<T>>(eventName: K, fn: T[K]): this;
+  on<K extends EventKey<A[number]>>(eventName: K, fn: A[number][K]): this;
   on(event: "close", listener: () => void): this;
   on(event: "data", listener: (chunk: any) => void): this;
   on(event: "end", listener: () => void): this;
@@ -69,6 +82,7 @@ export interface Readable<T extends EventMap = {}> extends stream.Readable {
   on(event: string | symbol, listener: (...args: any[]) => void): this;
 
   once<K extends EventKey<T>>(eventName: K, fn: T[K]): this;
+  once<K extends EventKey<A[number]>>(eventName: K, fn: A[number][K]): this;
   once(event: "close", listener: () => void): this;
   once(event: "data", listener: (chunk: any) => void): this;
   once(event: "end", listener: () => void): this;
@@ -79,6 +93,7 @@ export interface Readable<T extends EventMap = {}> extends stream.Readable {
   once(event: string | symbol, listener: (...args: any[]) => void): this;
 
   prependListener<K extends EventKey<T>>(eventName: K, fn: T[K]): this;
+  prependListener<K extends EventKey<A[number]>>(eventName: K, fn: A[number][K]): this;
   prependListener(event: "close", listener: () => void): this;
   prependListener(event: "data", listener: (chunk: any) => void): this;
   prependListener(event: "end", listener: () => void): this;
@@ -89,6 +104,7 @@ export interface Readable<T extends EventMap = {}> extends stream.Readable {
   prependListener(event: string | symbol, listener: (...args: any[]) => void): this;
 
   prependOnceListener<K extends EventKey<T>>(eventName: K, fn: T[K]): this;
+  prependOnceListener<K extends EventKey<A[number]>>(eventName: K, fn: A[number][K]): this;
   prependOnceListener(event: "close", listener: () => void): this;
   prependOnceListener(event: "data", listener: (chunk: any) => void): this;
   prependOnceListener(event: "end", listener: () => void): this;
@@ -99,6 +115,7 @@ export interface Readable<T extends EventMap = {}> extends stream.Readable {
   prependOnceListener(event: string | symbol, listener: (...args: any[]) => void): this;
 
   removeListener<K extends EventKey<T>>(eventName: K, fn: T[K]): this;
+  removeListener<K extends EventKey<A[number]>>(eventName: K, fn: A[number][K]): this;
   removeListener(event: "close", listener: () => void): this;
   removeListener(event: "data", listener: (chunk: any) => void): this;
   removeListener(event: "end", listener: () => void): this;
@@ -109,10 +126,15 @@ export interface Readable<T extends EventMap = {}> extends stream.Readable {
   removeListener(event: string | symbol, listener: (...args: any[]) => void): this;
 }
 
-export class Readable extends stream.Readable {}
+export class Readable<T extends EventMap = {}> extends stream.Readable {
+  constructor(opts?: ReadableOptions<T>) {
+    super(opts);
+  }
+}
 
-export interface Writable<T extends EventMap = {}> extends stream.Writable {
+export interface Writable<T extends EventMap = {}, A extends EventMap[] = []> extends stream.Writable {
   addListener<K extends EventKey<T>>(eventName: K, fn: T[K]): this;
+  addListener<K extends EventKey<A[number]>>(eventName: K, fn: A[number][K]): this;
   addListener(event: "close", listener: () => void): this;
   addListener(event: "drain", listener: () => void): this;
   addListener(event: "error", listener: (err: Error) => void): this;
@@ -122,6 +144,7 @@ export interface Writable<T extends EventMap = {}> extends stream.Writable {
   addListener(event: string | symbol, listener: (...args: any[]) => void): this;
 
   emit<K extends EventKey<T>>(eventName: K, ...args: Parameters<T[K]>): boolean;
+  emit<K extends EventKey<A[number]>>(eventName: K, ...args: Parameters<A[number][K]>): boolean;
   emit(event: "close"): boolean;
   emit(event: "drain"): boolean;
   emit(event: "error", err: Error): boolean;
@@ -131,6 +154,7 @@ export interface Writable<T extends EventMap = {}> extends stream.Writable {
   emit(event: string | symbol, ...args: any[]): boolean;
 
   on<K extends EventKey<T>>(eventName: K, fn: T[K]): this;
+  on<K extends EventKey<A[number]>>(eventName: K, fn: A[number][K]): this;
   on(event: "close", listener: () => void): this;
   on(event: "drain", listener: () => void): this;
   on(event: "error", listener: (err: Error) => void): this;
@@ -140,6 +164,7 @@ export interface Writable<T extends EventMap = {}> extends stream.Writable {
   on(event: string | symbol, listener: (...args: any[]) => void): this;
 
   once<K extends EventKey<T>>(eventName: K, fn: T[K]): this;
+  once<K extends EventKey<A[number]>>(eventName: K, fn: A[number][K]): this;
   once(event: "close", listener: () => void): this;
   once(event: "drain", listener: () => void): this;
   once(event: "error", listener: (err: Error) => void): this;
@@ -149,6 +174,7 @@ export interface Writable<T extends EventMap = {}> extends stream.Writable {
   once(event: string | symbol, listener: (...args: any[]) => void): this;
 
   prependListener<K extends EventKey<T>>(eventName: K, fn: T[K]): this;
+  prependListener<K extends EventKey<A[number]>>(eventName: K, fn: A[number][K]): this;
   prependListener(event: "close", listener: () => void): this;
   prependListener(event: "drain", listener: () => void): this;
   prependListener(event: "error", listener: (err: Error) => void): this;
@@ -158,6 +184,7 @@ export interface Writable<T extends EventMap = {}> extends stream.Writable {
   prependListener(event: string | symbol, listener: (...args: any[]) => void): this;
 
   prependOnceListener<K extends EventKey<T>>(eventName: K, fn: T[K]): this;
+  prependOnceListener<K extends EventKey<A[number]>>(eventName: K, fn: A[number][K]): this;
   prependOnceListener(event: "close", listener: () => void): this;
   prependOnceListener(event: "drain", listener: () => void): this;
   prependOnceListener(event: "error", listener: (err: Error) => void): this;
@@ -167,6 +194,7 @@ export interface Writable<T extends EventMap = {}> extends stream.Writable {
   prependOnceListener(event: string | symbol, listener: (...args: any[]) => void): this;
 
   removeListener<K extends EventKey<T>>(eventName: K, fn: T[K]): this;
+  removeListener<K extends EventKey<A[number]>>(eventName: K, fn: A[number][K]): this;
   removeListener(event: "close", listener: () => void): this;
   removeListener(event: "drain", listener: () => void): this;
   removeListener(event: "error", listener: (err: Error) => void): this;
@@ -175,7 +203,29 @@ export interface Writable<T extends EventMap = {}> extends stream.Writable {
   removeListener(event: "unpipe", listener: (src: Readable) => void): this;
   removeListener(event: string | symbol, listener: (...args: any[]) => void): this;
 }
-export class Writable extends stream.Writable {}
+
+export class Writable<T extends EventMap = {}> extends stream.Writable {
+  constructor(opts?: WritableOptions<T>) {
+    super(opts);
+  }
+}
+
+export function WriteToRead<T extends EventMap = {}, E extends EventMap = {}>(callback: (readable: Readable<E>, Writable: Writable<T>) => void): Writable<T> {
+  const src = new stream.Readable({ autoDestroy: true, emitClose: true, read(){} });
+  const wrc = new stream.Writable({
+    autoDestroy: true, emitClose: true,
+    write(chunk, encoding, callback) {
+      src.push(chunk, encoding);
+      callback();
+    },
+    final(callback) {
+      src.push(null);
+      callback();
+    }
+  });
+  callback(src, wrc);
+  return wrc;
+}
 
 export default {
   Readable,

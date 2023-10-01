@@ -191,6 +191,6 @@ export async function readFile(filePath: string, options?: {start: number, end: 
 export async function createRandomFile(filePath: string, fileSize: number) {
   if (fileSize < 0 || (isNaN(fileSize)||fileSize === Infinity)) throw new Error("Require positive file size and not Infinity");
   const str = createWriteStream(filePath);
-  await finished((new randomBytesStream(fileSize)).pipe(str));
+  await finished(randomBytesStream(fileSize).pipe(str));
   return fs.lstat(filePath);
 }

@@ -1,5 +1,5 @@
 import { createReadStream, createWriteStream, promises as fs } from "node:fs";
-import { arParseAbstract, createArStream, parseArStream } from "@sirherobrine23/ar";
+import { createArStream, parseArStream, arParse } from "@sirherobrine23/ar";
 import { Compressors, compressStream, decompressStream } from "@sirherobrine23/decompress";
 import { extendsCrypto, extendsFS } from "@sirherobrine23/extends";
 import { tmpdir } from "node:os";
@@ -288,69 +288,49 @@ export async function parsePackage(debStream: stream.Readable) {
   };
 }
 
-export interface parseStream extends arParseAbstract {
-  on(event: "close", listener: () => void): this;
-  on(event: "drain", listener: () => void): this;
-  on(event: "error", listener: (err: Error) => void): this;
-  on(event: "finish", listener: () => void): this;
-  on(event: "pipe", listener: (src: stream.Readable) => void): this;
-  on(event: "unpipe", listener: (src: stream.Readable) => void): this;
-  on(event: "dataFile", listener: (fileInfo: tarStream.Headers, fileStream: stream.Readable) => void): this;
-  on(event: "control", listener: (packageControl: debianControl) => void): this;
-  on(event: string | symbol, listener: (...args: any[]) => void): this;
+export class dpkgParse extends arParse<{ control(packageControl: debianControl): void, dataFile(fileInfo: tarStream.Headers, fileStream: stream.Readable): void }> {
+  #isDebian = false;
+  #filesList = new Set<tarStream.Headers>();
+  getFiles() {
+    return Array.from(this.#filesList.values());
+  }
 
-  once(event: "close", listener: () => void): this;
-  once(event: "drain", listener: () => void): this;
-  once(event: "error", listener: (err: Error) => void): this;
-  once(event: "finish", listener: () => void): this;
-  once(event: "pipe", listener: (src: stream.Readable) => void): this;
-  once(event: "unpipe", listener: (src: stream.Readable) => void): this;
-  once(event: "dataFile", listener: (fileInfo: tarStream.Headers, fileStream: stream.Readable) => void): this;
-  once(event: "control", listener: (packageControl: debianControl) => void): this;
-  once(event: string | symbol, listener: (...args: any[]) => void): this;
+  #controlFile: debianControl;
+  getControl() {
+    if (!this.#controlFile) throw new Error("Package not loaded!");
+    return this.#controlFile;
+  }
+
+  constructor() {
+    super(async (head, fileStream) => {
+      if (path.basename(head.name).startsWith("debian-binary")) this.#isDebian = true;
+      else if (!this.#isDebian) throw new Error("Cannot extract debian file, malformed debian package!");
+      else if (path.basename(head.name).startsWith("control.tar")) {
+        const controlTar = fileStream.pipe(decompressStream()).pipe(tarStream.extract());
+        controlTar.on("entry", async (entry, fileStr, next) => {
+          next();
+          if (path.basename(entry.name) === "control") {
+            const bufferConcat: Buffer[] = [];
+            await finished(fileStr.on("data", data => bufferConcat.push(data)));
+            this.emit("control", (this.#controlFile = parseControl(Buffer.concat(bufferConcat))));
+          } else if (path.basename(entry.name) === "md5sums") {
+
+          }
+        });
+        await finished(controlTar, {error: true});
+      } else if (path.basename(head.name).startsWith("data.tar")) {
+        await finished(fileStream.pipe(decompressStream()).pipe(tarStream.extract()).on("entry", (entry, str, next) => {
+          next();
+          this.emit("dataFile", entry, str);
+          this.#filesList.add(entry);
+        }), {error: true});
+      } else throw new Error("Invalid file");
+    });
+  }
 }
 
-export function parsePackageStream(): parseStream {
-  return new class parseStream extends arParseAbstract {
-    #isDebian = false;
-    #filesList = new Set<tarStream.Headers>();
-    getFiles() {
-      return Array.from(this.#filesList.values());
-    }
-
-    #controlFile: debianControl;
-    getControl() {
-      if (!this.#controlFile) throw new Error("Package not loaded!");
-      return this.#controlFile;
-    }
-
-    constructor() {
-      super(async (head, fileStream) => {
-        if (path.basename(head.name).startsWith("debian-binary")) this.#isDebian = true;
-        else if (!this.#isDebian) throw new Error("Cannot extract debian file, malformed debian package!");
-        else if (path.basename(head.name).startsWith("control.tar")) {
-          const controlTar = fileStream.pipe(decompressStream()).pipe(tarStream.extract());
-          controlTar.on("entry", async (entry, fileStr, next) => {
-            next();
-            if (path.basename(entry.name) === "control") {
-              const bufferConcat: Buffer[] = [];
-              await finished(fileStr.on("data", data => bufferConcat.push(data)));
-              this.emit("control", (this.#controlFile = parseControl(Buffer.concat(bufferConcat))));
-            } else if (path.basename(entry.name) === "md5sums") {
-
-            }
-          });
-          await finished(controlTar, {error: true});
-        } else if (path.basename(head.name).startsWith("data.tar")) {
-          await finished(fileStream.pipe(decompressStream()).pipe(tarStream.extract()).on("entry", (entry, str, next) => {
-            next();
-            this.emit("dataFile", entry, str);
-            this.#filesList.add(entry);
-          }), {error: true});
-        } else throw new Error("Invalid file");
-      });
-    }
-  }
+export function parsePackageStream() {
+  return new dpkgParse();
 }
 
 /**

@@ -27,7 +27,8 @@
   },
   "scripts": {
     "prepack": "tsc --build --clean && tsc --build",
-    "postpack": "tsc --build --clean"
+    "postpack": "tsc --build --clean",
+    "test": "mocha ./test"
   },
   "dependencies": {
     "@sirherobrine23/ar": "3.6.12",

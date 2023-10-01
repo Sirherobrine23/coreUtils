@@ -6,7 +6,7 @@ import zlib from "zlib";
 import lzma from "lzma-native";
 
 // Detect compression
-const isCompress = {
+export const isCompress = {
   deflate: (buf: Buffer) => ((buf[0] === 0x78) && (buf[1] === 1 || buf[1] === 0x9c || buf[1] === 0xda)),
   bzip2: (buf: Buffer) => ((buf[0] === 0x5A) && (buf[1] === 0x42) && (buf[3] === 0x68) && (buf[4] === 0x41) && (buf[5] === 0x31) && (buf[6] === 0x26) && (buf[7] === 0x59) && (buf[8] === 0x59) && (buf[9] === 0x53)),
   gzip: (buf: Buffer) => (buf[0] === 0x1F && (buf[1] === 0x8B) && (buf[2] === 0x08)),

@@ -11,7 +11,7 @@ import path from "node:path";
 type RegionPretty<S extends string> = S extends `${infer T}_${infer U}` ? `${T}-${RegionPretty<U>}` : S
 export type oracleRegions = RegionPretty<Lowercase<Exclude<Exclude<keyof typeof ociAuth.Region, typeof ociAuth.Region>, "values"|"enableInstanceMetadata"|"register"|"fromRegionId"|"getRegionIdFromShortCode"|"hasUsedConfigFile"|"prototype"|"REGION_STRING"|"REGION_ID_STRING"|"REGION_ID">>>;
 
-function getRegion(region: oracleRegions) {
+export function getRegion(region: oracleRegions) {
   if (region === "uk-london-1") return ociAuth.Region.UK_LONDON_1;
   else if (region === "uk-cardiff-1") return ociAuth.Region.UK_CARDIFF_1;
   else if (region === "uk-gov-cardiff-1") return ociAuth.Region.UK_GOV_CARDIFF_1;

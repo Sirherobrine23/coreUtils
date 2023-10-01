@@ -2,6 +2,7 @@
   "name": "coreutils",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "This is a simple project to bring together and facilitate some simple resources from the world of Nodejs and Typescript.",
   "repository": {
     "type": "git",
