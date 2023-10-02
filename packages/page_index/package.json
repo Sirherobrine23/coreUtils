@@ -1,6 +1,6 @@
 {
   "name": "index-pages",
-  "version": "3.6.12",
+  "version": "3.7.0",
   "description": "Create index pages",
   "type": "module",
   "main": "src/index.js",
@@ -29,8 +29,8 @@
     "postpack": "tsc --build --clean"
   },
   "dependencies": {
-    "@sirherobrine23/extends": "3.6.12",
-    "@sirherobrine23/http": "3.6.12",
+    "@sirherobrine23/extends": "3.7.0",
+    "@sirherobrine23/http": "3.7.0",
     "jsdom": "^22.1.0",
     "yargs": "^17.7.2"
   },
