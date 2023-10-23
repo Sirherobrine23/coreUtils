@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions: write-all
     steps:
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         name: Setup Node.js
         with:
           registry-url: https://registry.npmjs.org/
