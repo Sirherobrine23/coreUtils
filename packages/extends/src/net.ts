@@ -1,5 +1,5 @@
-import { randomInt } from "node:crypto";
 export { isIP, isIPv4, isIPv6 } from "node:net";
+
 /*
 Original repository: https://github.com/arminhammer/node-cidr
 LINCENSE: Apache-2.0 license
@@ -9,15 +9,15 @@ Patch by @Sirherobrine23
 // Common
 const invalidChars = /^.*?(?=[\^#%&$\*:<>\?\/\{\|\}[a-zA-Z]).*$/;
 
-function intCommonCidr(ips: number[]): string {
+function intCommonCidr(ips: bigint[]): string {
   const ipInt = ips.sort(), range = ipInt[ipInt.length - 1] - ipInt[0];
   let mask = 0;
   let baseIp = ipInt[0];
   for (let i = 0; i <= 32; i++) {
     mask = 32 - i;
-    const exp = 2 ** (32 - mask);
-    if (exp - 1 >= range) {
-      if (ipInt[0] % exp != 0) {
+    const exp = BigInt(2 ** (32 - mask));
+    if (exp - 1n >= range) {
+      if (ipInt[0] % exp != 0n) {
         baseIp = ipInt[0] - ipInt[0] % exp;
       }
       if (ipInt[ipInt.length - 1] > baseIp + exp) {
@@ -26,7 +26,7 @@ function intCommonCidr(ips: number[]): string {
       break;
     }
   }
-  return `${toString(baseIp)}/${mask}`;
+  return `${toString(BigInt(baseIp))}/${mask}`;
 }
 
 function padLeft(input: string, char: string, min: number): string {
@@ -34,17 +34,48 @@ function padLeft(input: string, char: string, min: number): string {
   return input;
 }
 
-export function toInt(ipAddress: string): number {
-  return ipAddress.split(".").reduce((p: number, c: string, i: number) => p + parseInt(c) * 256 ** (3 - i), 0);
+export function toInt(ipAddress: string): bigint {
+  const [ group1, group2, group3, group ] = ipAddress.split(".");
+  if (!(group1 && group2 && group3 && group)) {
+    return BigInt(String("0x").concat(ipAddress.split(":").map(c => c.length === 0 ? "0000" : c).join("")));
+  }
+
+  return ([group1, group2, group3, group]).reduce<bigint>((p, c: string, i: number) => p + BigInt(parseInt(c) * 256 ** (3 - i)), 0n);
+}
+
+function trimStart(s: string, replace: string) {
+  while (s.startsWith(replace)) { s = s.slice(replace.length); }
+  return s;
 }
 
 /**
  * convert number to IP
  * @param ipInt - IPv4 Number
  * @returns
- */
-export function toString(ipInt: number): string {
-  let remaining = ipInt;
+*/
+export function toString(ipInt: bigint): string {
+  if (ipInt > 4294967295n) {
+    let hex = ipInt.toString(16);
+    let group: string[] = [];
+    let isHex = (c: string) => (["a", "b", "c", "d", "e", "f"]).includes(c.toLowerCase());
+    if (hex.length <= 16) {
+      hex = String().padStart(16 - hex.length, "0").concat(hex);
+    }
+
+    while (hex.length > 0) {
+      let a1 = 0, a2 = 4;
+      if (hex.length > 3) {
+        if (isHex(hex[2]) && !isHex(hex[3])) a2 = 3;
+      }
+      group.push(hex.slice(a1, a2));
+      hex = hex.slice(a2);
+    }
+
+    group = ([["0"]]).concat(group.map(s => s === "0000" ? ["0", "0", "0", "0"] : [trimStart(s, "0")])).flat(2).slice(-8);
+    return group.join(":");
+  }
+
+  let remaining: number = parseInt(ipInt.toString());
   return String(Math.max(0, Math.min(255, Math.floor(remaining / 256 ** 3)))).concat(
     ".",
     String(Math.max(0, Math.min(255, Math.floor((remaining = remaining % 256 ** 3) / 256 ** 2)))),
@@ -66,8 +97,8 @@ export function ipCommonCidr(ips: [string, ...(string[])]): string {
   return intCommonCidr(ipInt);
 }
 
-export function toOctets(input: string | number): [number, number, number, number] {
-  if (typeof input === "number") input = toString(input);
+export function toOctets(input: string | bigint): [number, number, number, number] {
+  if (typeof input === "bigint") input = toString(input);
   const [a1, a2, a3, a4] = address(input).split(".").map(x => parseInt(x));
   return [a1, a2, a3, a4];
 }
@@ -76,8 +107,8 @@ export function toOctets(input: string | number): [number, number, number, numbe
  * Returns the reverse lookup hostname for the address.
  * @returns {string}
  */
-export function reverse(ip: string | number): string {
-  if (typeof ip === "number") ip = toString(ip);
+export function reverse(ip: string | bigint): string {
+  if (typeof ip === "bigint") ip = toString(ip);
   const octets = toOctets(ip);
   return `${octets[3]}.${octets[2]}.${octets[1]}.${octets[0]}.in-addr.arpa`;
 }
@@ -85,7 +116,7 @@ export function reverse(ip: string | number): string {
  * Returns the binary representation of the address, in string form.
  * @returns {string}
  */
-export function toBinary(ip: string | number): string {
+export function toBinary(ip: string | bigint): string {
   const octets = toOctets(ip);
   let o = [];
   for (let i = 0; i < 4; i++) {
@@ -98,7 +129,7 @@ export function toBinary(ip: string | number): string {
  * Provides the hex value of the address.
  * @returns {string}
  */
-export function toHex(ip: string | number): string {
+export function toHex(ip: string | bigint): string {
   if (typeof ip === 'string') {
     ip = toInt(ip);
   }
@@ -110,7 +141,7 @@ export function toHex(ip: string | number): string {
  * @returns {string}
  */
 export function nextIp(ip: string): string {
-  return toString(toInt(ip) + 1);
+  return toString(toInt(ip) + 1n);
 }
 
 /**
@@ -118,7 +149,7 @@ export function nextIp(ip: string): string {
  * @returns {string}
  */
 export function previousIp(ip: string): string {
-  return toString(toInt(ip) - 1);
+  return toString(toInt(ip) - 1n);
 }
 
 /**
@@ -127,8 +158,8 @@ export function previousIp(ip: string): string {
  * @param ip - Input ip
  * @returns
  */
-export function toCidr(ip: string | number): string {
-  if (typeof ip === 'number') ip = toString(ip);
+export function toCidr(ip: string | bigint): string {
+  if (typeof ip === 'bigint') ip = toString(ip);
   else if (ip.indexOf("/") !== -1) {
     const mask = parseInt(ip.split("/")[1]);
     if (mask >= 0 && mask <= 32) return ip;
@@ -144,11 +175,11 @@ export function toCidr(ip: string | number): string {
 }
 
 export function nextCidr(cidr: string): string {
-  return `${toString(toInt(address(cidr)) + 2 ** (32 - mask(cidr)))}/${mask(cidr)}`;
+  return `${toString(toInt(address(cidr)) + 2n ** (32n - mask(cidr)))}/${mask(cidr)}`;
 }
 
 export function previousCidr(cidr: string): string {
-  return `${toString(toInt(address(cidr)) - 2 ** (32 - mask(cidr)))}/${mask(cidr)}`;
+  return `${toString(toInt(address(cidr)) - 2n ** (32n - mask(cidr)))}/${mask(cidr)}`;
 }
 
 export function validateIp(ip: string): string | null {
@@ -180,8 +211,8 @@ export function validateCidr(cidr: string): string | null {
     return 'Invalid: mask cannot be more than 32';
   if (cidrMask < 0)
     return 'Invalid: mask cannot be less than 0';
-  if (isNaN(cidrMask))
-    return 'Invalid: mask must be a positive integer';
+  // if (isNaN(cidrMask))
+  //   return 'Invalid: mask must be a positive integer';
   if (ip !== min(cidr))
     return `Invalid: CIDR better expressed as ${min(cidr)}/${mask(cidr)}`;
   return null;
@@ -196,12 +227,12 @@ export function address(ip: string): string {
 
 export function mask(ip: string) {
   if (ip.indexOf("/") === -1) ip = ip.concat("/", toCidr(ip).split("/")[1]);
-  const mask = parseInt(ip.split("/")[1]);
+  const mask = BigInt(ip.split("/")[1]);
   if (mask >= 1 && 32 < mask) throw new Error("Invalid mask");
   return mask;
 }
 
-export function toIntRange(cidr: string): [number, number] {
+export function toIntRange(cidr: string): [bigint, bigint] {
   cidr = toCidr(cidr);
   const __min = toInt(min(cidr)), __max = toInt(max(cidr));
   if (__min >= __max) throw new Error("Invalid cidr");
@@ -219,7 +250,7 @@ export function cidrCommonCidr(cidrs: string[]): string {
 }
 
 export function netmask(cidr: string): string {
-  return toString(2 ** 32 - 2 ** (32 - mask(toCidr(cidr))));
+  return toString(2n ** 32n - 2n ** (32n - mask(toCidr(cidr))));
 }
 
 export function broadcast(cidr: string): string {
@@ -230,33 +261,33 @@ export function min(cidr: string): string {
   cidr = toCidr(cidr);
   const addr = address(cidr);
   const addrInt = toInt(addr);
-  const div = addrInt % 2 ** (32 - mask(cidr));
+  const div = addrInt % 2n ** (32n - mask(cidr));
   return div > 0 ? toString(addrInt - div) : addr;
 }
 
 export function max(cidr: string): string {
   cidr = toCidr(cidr);
-  let initial: number = toInt(min(cidr));
-  let add = 2 ** (32 - mask(cidr));
-  return toString(initial + add - 1);
+  let initial = toInt(min(cidr));
+  let add = 2n ** (32n - mask(cidr));
+  return toString(initial + add - 1n);
 }
 
 export function fistIp(cidr: string): string {
-  return toString(toInt(min(toCidr(cidr)))+1);
+  return toString(toInt(min(toCidr(cidr)))+1n);
 }
 
-export function count(cidr: string): number {
-  return 2 ** (32 - mask(toCidr(cidr)));
+export function count(cidr: string): bigint {
+  return 2n ** (32n - mask(toCidr(cidr)));
 }
 
 export function usable(cidr: string): string[] {
   cidr = toCidr(cidr);
   const result = [];
-  let start = toInt(min(cidr)) + 1;
+  let start = toInt(min(cidr)) + 1n;
   const stop = toInt(max(cidr));
   while (start < stop) {
     result.push(toString(start));
-    start += 1;
+    start += 1n;
   }
   return result;
 }
@@ -275,17 +306,15 @@ export function usable(cidr: string): string[] {
  * @returns
  */
 export function wildcardmask(cidr: string): string {
-  return toString(2 ** (32 - mask(toCidr(cidr))) - 1);
+  return toString(2n ** (32n - mask(toCidr(cidr))) - 1n);
 }
 
-export function subnets(cidr: string, subMask: number, limit: number): string[] {
+export function subnets(cidr: string, subMask: bigint, limit: bigint): string[] {
   // const mainMask: number = mask(cidr);
-  const step = 2 ** (32 - subMask), subnets = [];
+  const step = 2n ** (32n - subMask), subnets = [];
   let count = toInt(address(cidr)) - step;
   let maxIp = toInt(max(cidr));
 
-  if (limit >= Number.MAX_SAFE_INTEGER) throw new Error("Limit is so big");
-  else if (isNaN(limit) || !(isFinite(limit))) throw new Error("Set valid limit");
   limit = count + limit * step;
   if (limit < maxIp) maxIp = limit;
   while (count < maxIp) subnets.push(toString(count += step).concat("/", String(subMask)));
@@ -315,23 +344,6 @@ export function includes(cidr: string, ip: string): boolean {
 }
 
 /**
- * Select random IP from CIDR
- * @param cidr
- * @param drops
- * @returns
- */
-export function randomIp(cidr: string, drops?: string[]): string {
-  const [minIp, maxIp] = toIntRange(toCidr(cidr));
-  let trys = maxIp - minIp;
-  while (trys > 0) {
-    const ip = toString(randomInt(minIp, maxIp));
-    if (!((drops||[]).includes(ip))) return ip;
-    trys--;
-  }
-  throw new Error("Cannot get random IP or overflow IPs");
-}
-
-/**
  * Get next IP from cidr and skip if exist's else throw if no avaible IP's
  * @param cidr
  * @param skips
@@ -339,7 +351,7 @@ export function randomIp(cidr: string, drops?: string[]): string {
  */
 export function nextIpSequence(cidr: string, skips?: string[]): string {
   const [minIp, maxIp] = toIntRange(toCidr(cidr));
-  let index = 1;
+  let index = 1n;
   while ((minIp + index) < maxIp) {
     const ip = toString(minIp + (++index));
     if (!((skips||[]).includes(ip))) return ip;
