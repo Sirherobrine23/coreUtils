@@ -5,7 +5,7 @@ import stream from "node:stream";
 export { HTTPError };
 
 const ignoreBody: Method[] = ["GET", "get", "HEAD", "head"];
-const got = gotMain.extend({
+export const got = gotMain.extend({
   enableUnixSockets: false,
   resolveBodyOnly: false,
   throwHttpErrors: false,
@@ -34,7 +34,7 @@ export class httpCoreError {
 }
 
 export interface reqStream extends Request {
-  headers: Headers
+  headers: Headers;
 };
 
 export function streamRoot(re: validURL|requestOptions, options?: Omit<requestOptions, "url">, throwHttpErrors: boolean = true) {

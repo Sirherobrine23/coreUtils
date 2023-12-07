@@ -1,82 +1,65 @@
-export { isIP, isIPv4, isIPv6 } from "node:net";
+import { isIP, isIPv4, isIPv6 } from "node:net";
+export { isIP, isIPv4, isIPv6 };
 
-/*
-Original repository: https://github.com/arminhammer/node-cidr
-LINCENSE: Apache-2.0 license
-Patch by @Sirherobrine23
-*/
-
-// Common
-const invalidChars = /^.*?(?=[\^#%&$\*:<>\?\/\{\|\}[a-zA-Z]).*$/;
-
-function intCommonCidr(ips: bigint[]): string {
-  const ipInt = ips.sort(), range = ipInt[ipInt.length - 1] - ipInt[0];
-  let mask = 0;
-  let baseIp = ipInt[0];
-  for (let i = 0; i <= 32; i++) {
-    mask = 32 - i;
-    const exp = BigInt(2 ** (32 - mask));
-    if (exp - 1n >= range) {
-      if (ipInt[0] % exp != 0n) {
-        baseIp = ipInt[0] - ipInt[0] % exp;
-      }
-      if (ipInt[ipInt.length - 1] > baseIp + exp) {
-        mask--;
-      }
-      break;
-    }
-  }
-  return `${toString(BigInt(baseIp))}/${mask}`;
-}
-
-function padLeft(input: string, char: string, min: number): string {
-  while (input.length < min) input = char + input;
-  return input;
-}
-
+/**
+ * Convert IP to BigInt/number
+ * @param ipAddress - IPv4 or IPv6 address.
+ * @returns
+ */
 export function toInt(ipAddress: string): bigint {
   const [ group1, group2, group3, group ] = ipAddress.split(".");
   if (!(group1 && group2 && group3 && group)) {
-    return BigInt(String("0x").concat(ipAddress.split(":").map(c => c.length === 0 ? "0000" : c).join("")));
+    while (ipAddress.indexOf("::") >= 0) ipAddress = ipAddress.replace("::", "0000:0000");
+    return BigInt(String("0x").concat(ipAddress.split(":").map(c => (c.length === 0||c === "0") ? "0000" : c).join("")));
   }
-
   return ([group1, group2, group3, group]).reduce<bigint>((p, c: string, i: number) => p + BigInt(parseInt(c) * 256 ** (3 - i)), 0n);
 }
 
-function trimStart(s: string, replace: string) {
-  while (s.startsWith(replace)) { s = s.slice(replace.length); }
-  return s;
+/**
+ * Convert IPv4 or IPv6 to Binary format.
+ *
+ * @param ipAddress - IPv4 or IPv6
+ * @returns
+ */
+export function toBinary(ipAddress: bigint|string): string {
+  if (!(typeof ipAddress === "string" || typeof ipAddress === "bigint")) throw new TypeError("Invalid input IP Address");
+  else if (typeof ipAddress === "string") ipAddress = toInt(ipAddress);
+  return ipAddress.toString(2);
 }
 
+const fistIPv6 = 4294967295n, endIPv6 = 340282366920938463463374607431768211455n;
+
 /**
- * convert number to IP
- * @param ipInt - IPv4 Number
+ * convert number to IPv4 or IPv6.
+ *
+ * @param ipInt - IPv4/IPv6 Number
  * @returns
 */
-export function toString(ipInt: bigint): string {
-  if (ipInt > 4294967295n) {
-    let hex = ipInt.toString(16);
-    let group: string[] = [];
-    let isHex = (c: string) => (["a", "b", "c", "d", "e", "f"]).includes(c.toLowerCase());
-    if (hex.length <= 16) {
-      hex = String().padStart(16 - hex.length, "0").concat(hex);
-    }
-
+export function toString(ipInt: bigint, forceV6?: boolean): string {
+  if (ipInt < 0n || ipInt >= endIPv6) throw new TypeError("Invalid input IP");
+  // Ipv6
+  if (forceV6 || ipInt > fistIPv6) {
+    let hex = ipInt.toString(16), iph: string[] = [];
+    if (hex.length <= 16) hex = String().padStart(Math.abs(16 - hex.length), "0").concat(hex);
     while (hex.length > 0) {
-      let a1 = 0, a2 = 4;
-      if (hex.length > 3) {
-        if (isHex(hex[2]) && !isHex(hex[3])) a2 = 3;
-      }
-      group.push(hex.slice(a1, a2));
-      hex = hex.slice(a2);
+      iph.push(hex.slice(0, 4));
+      hex = hex.slice(4);
     }
-
-    group = ([["0"]]).concat(group.map(s => s === "0000" ? ["0", "0", "0", "0"] : [trimStart(s, "0")])).flat(2).slice(-8);
-    return group.join(":");
+    if (iph.length < 8) for (let i = iph.length; i < 8; i++) iph = (["0000"]).concat(iph);
+    if (iph[0] === "0000" && iph[1] === "0000" && iph[2] === "0000" && iph[3] === "0000" && iph[4] === "0000" && iph[5] === "0000") iph = ["", "", "ffff", iph[6], iph[7]];
+    else if (iph[2] === "0000" && iph[3] === "0000" && iph[4] !== "0000" && iph[5] === "0000" ) iph = [iph[0], iph[1], iph[4], "", iph[7]];
+    iph = iph.map(s =>{
+      if (s === "0000") return "0";
+      else if (s[0] === "0" && s[1] === "0") return s.slice(2);
+      else if (s[0] === "0" && s[1] !== "0") return s.slice(1);
+      return s;
+    });
+    return iph.join(":");
   }
 
   let remaining: number = parseInt(ipInt.toString());
-  return String(Math.max(0, Math.min(255, Math.floor(remaining / 256 ** 3)))).concat(
+  return ("").concat(
+    String(Math.max(0, Math.min(255, Math.floor(remaining / 256 ** 3)))),
     ".",
     String(Math.max(0, Math.min(255, Math.floor((remaining = remaining % 256 ** 3) / 256 ** 2)))),
     ".",
@@ -87,53 +70,44 @@ export function toString(ipInt: bigint): string {
 }
 
 /**
- * Get valid cidr
- * @param ips
- * @returns
+ * Convert IPv4 in to IPv6
+ *
+ * @example
+ * ```js
+ * toV6("192.178.66.255"); // => "0000:0000:0000:0000:0000:ffff:c0b2:42ff"
+ * toV6("192.178.66.255", false); // => "0000:0000:0000:0000:0000:ffff:c0b2:42ff"
+ * toV6("192.178.66.255", true); // => "::ffff:c0b2:42ff" - Simplified version
+ * ```
  */
-export function ipCommonCidr(ips: [string, ...(string[])]): string {
-  if (!ips || ips.filter(s => !!(address(s))).length < 1) throw new Error("Insert fist ip");
-  const ipInt = ips.map(toInt);
-  return intCommonCidr(ipInt);
-}
-
-export function toOctets(input: string | bigint): [number, number, number, number] {
-  if (typeof input === "bigint") input = toString(input);
-  const [a1, a2, a3, a4] = address(input).split(".").map(x => parseInt(x));
-  return [a1, a2, a3, a4];
-}
-
-/**
- * Returns the reverse lookup hostname for the address.
- * @returns {string}
- */
-export function reverse(ip: string | bigint): string {
-  if (typeof ip === "bigint") ip = toString(ip);
-  const octets = toOctets(ip);
-  return `${octets[3]}.${octets[2]}.${octets[1]}.${octets[0]}.in-addr.arpa`;
-}
-/**
- * Returns the binary representation of the address, in string form.
- * @returns {string}
- */
-export function toBinary(ip: string | bigint): string {
-  const octets = toOctets(ip);
-  let o = [];
-  for (let i = 0; i < 4; i++) {
-    o[i] = padLeft((octets[i] >>> 0).toString(2), '0', 8);
-  }
-  return `${o[0]}.${o[1]}.${o[2]}.${o[3]}`;
+export function toV6(ipv4: string, compressedv6: boolean = false) {
+  if (!(isIPv4(ipv4))) throw new Error("ipv4 is required");
+  const classValues = ipv4.split(".").map(s => parseInt(s.split("/")[0]) % 256);
+  const hexaCode = (hexaVal: number) => hexaVal >= 0 && hexaVal <= 9 ? hexaVal : (hexaVal === 10 ? "a" : (hexaVal === 11 ? "b" : (hexaVal === 12 ? "c" : (hexaVal === 13 ? "d" : (hexaVal === 14 ? "e" : "f")))));
+  const str = classValues.reduce((acc, val, ind) => {
+    const mod = +val >= 16 ? +val%16 : +val;
+    const modRes = hexaCode(mod);
+    const dividerRes = hexaCode(+val >= 16 ? (val-mod)/16 : 0);
+    return ind === 1 ? `${acc}${dividerRes}${modRes}:`:`${acc}${dividerRes}${modRes}`;
+  }, "");
+  return ("").concat(compressedv6 ? ":" : "0000:0000:0000:0000:0000", (":ffff:"), str);
 }
 
 /**
- * Provides the hex value of the address.
- * @returns {string}
+ * Get IPv4 from IPv6v4 (IPv4 in IPv6).
+ *
+ * @param ipv6 - IPv6v4
+ * @returns IPv4 address
  */
-export function toHex(ip: string | bigint): string {
-  if (typeof ip === 'string') {
-    ip = toInt(ip);
-  }
-  return ip.toString(16);
+export function fromV6(ipv6: string): string {
+  if (!(isIPv6(ipv6) && (["::ffff:", "0000:0000:0000:0000:0000:ffff:", "2002:"]).some(s => ipv6.startsWith(s) && (s === "2002:" ? (ipv6.endsWith("::")) : true)))) throw new Error("Invalid block input");
+  let b64: string;
+  if (ipv6.startsWith("2002:")) b64 = ipv6.slice(5, -2);
+  else if (ipv6.startsWith("::ffff:")) b64 = ipv6.slice(7);
+  else b64 = ipv6.slice(30);
+  b64 = b64.split(":").join("");
+  if (b64.split(".").length === 4 && !(b64.split(".").map(s => parseInt(s)).some(s => !(s >= 0 && s <= 255)))) return b64;
+  if (b64.length > 8) throw new Error("invalid ipv4 in ipv6");
+  return toString(BigInt(("0x").concat(b64)));
 }
 
 /**
@@ -152,184 +126,35 @@ export function previousIp(ip: string): string {
   return toString(toInt(ip) - 1n);
 }
 
-/**
- * Get CIDR from ip
- *
- * @param ip - Input ip
- * @returns
- */
-export function toCidr(ip: string | bigint): string {
-  if (typeof ip === 'bigint') ip = toString(ip);
-  else if (ip.indexOf("/") !== -1) {
-    const mask = parseInt(ip.split("/")[1]);
-    if (mask >= 0 && mask <= 32) return ip;
-    else ip = address(ip);
-  }
-  let mask = 8;
-  while (true) {
-    if (mask >= 32) break;
-    mask += 4;
-    if (includes(ip+"/"+mask, ip)) break;
-  }
-  return min(`${ip}/${mask}`)+"/"+mask;
-}
-
-export function nextCidr(cidr: string): string {
-  return `${toString(toInt(address(cidr)) + 2n ** (32n - mask(cidr)))}/${mask(cidr)}`;
-}
-
-export function previousCidr(cidr: string): string {
-  return `${toString(toInt(address(cidr)) - 2n ** (32n - mask(cidr)))}/${mask(cidr)}`;
-}
-
-export function validateIp(ip: string): string | null {
-  if (invalidChars.test(ip))
-    return 'Invalid IP: illegal character';
-
-  const octets = ip.split('.');
-  if (octets.length !== 4)
-    return 'Invalid address: Not enough quads';
-  for (let i = 0; i < octets.length; i++) {
-    const int = parseInt(octets[i]);
-    if (isNaN(int))
-      return 'Invalid IP: Invalid quad';
-    if (int > 255)
-      return 'Invalid IP: quad too large';
-  }
-  return null;
-}
-
-// CIDR Methods
-export function validateCidr(cidr: string): string | null {
-  const ip = address(cidr);
-  const ipValid = validateIp(ip);
-  if (ipValid !== null)
-    return ipValid;
-  const cidrMask = mask(cidr);
-  console.log('cidrMask:', cidrMask, cidr);
-  if (cidrMask > 32)
-    return 'Invalid: mask cannot be more than 32';
-  if (cidrMask < 0)
-    return 'Invalid: mask cannot be less than 0';
-  // if (isNaN(cidrMask))
-  //   return 'Invalid: mask must be a positive integer';
-  if (ip !== min(cidr))
-    return `Invalid: CIDR better expressed as ${min(cidr)}/${mask(cidr)}`;
-  return null;
-}
-
 export function address(ip: string): string {
   if (!ip || typeof ip === "string" && ip.length < 3) throw new Error("Set IP address");
   ip = ip.split("/")[0];
-  if (ip.split(".").length !== 4) throw new Error("set valid IP address");
+  if (isIP(ip) === 0) throw new Error("set valid IP address");
   return ip;
 }
 
-export function mask(ip: string) {
-  if (ip.indexOf("/") === -1) ip = ip.concat("/", toCidr(ip).split("/")[1]);
-  const mask = BigInt(ip.split("/")[1]);
-  if (mask >= 1 && 32 < mask) throw new Error("Invalid mask");
+export function mask(ipCidr: string) {
+  if (ipCidr.indexOf("/") === -1) ipCidr = ipCidr.concat("/", toCidr(ipCidr).split("/")[1]);
+  const [_ip, _mask] = ipCidr.split("/");
+  const mask = BigInt(_mask);
+  if (isIP(_ip) === 0) throw new TypeError("Invalid Address");
+  else if (mask < 0n || mask > 128n) throw new Error("Invalid Mask");
+  else if (isIPv4(_ip) && 32n !< mask) throw new Error("Invalid cidr IPv4 address");
+  else if (128n !< mask) throw new Error("Invalid cidr IPv6 address");
   return mask;
 }
 
-export function toIntRange(cidr: string): [bigint, bigint] {
-  cidr = toCidr(cidr);
-  const __min = toInt(min(cidr)), __max = toInt(max(cidr));
-  if (__min >= __max) throw new Error("Invalid cidr");
-  return [ __min, __max ];
-}
-
-export function toRange(cidr: string): [string, string] {
-  return [min(cidr), max(cidr)];
-}
-
-export function cidrCommonCidr(cidrs: string[]): string {
-  const ipMap = cidrs.map(x => toIntRange(x));
-  const ipInt = Array.prototype.concat.apply([], ipMap).sort();
-  return intCommonCidr(ipInt);
-}
-
-export function netmask(cidr: string): string {
-  return toString(2n ** 32n - 2n ** (32n - mask(toCidr(cidr))));
-}
-
-export function broadcast(cidr: string): string {
-  return max(toCidr(cidr));
-}
-
 export function min(cidr: string): string {
-  cidr = toCidr(cidr);
-  const addr = address(cidr);
-  const addrInt = toInt(addr);
-  const div = addrInt % 2n ** (32n - mask(cidr));
-  return div > 0 ? toString(addrInt - div) : addr;
+  const addr = address((cidr = toCidr(cidr))), addrInt = toInt(addr);
+  const div = isIPv4(addr) ? addrInt % 2n ** (32n - mask(cidr)) : addrInt % 2n ^ (128n - mask(cidr));
+  return div > 0n ? toString(addrInt - div) : addr;
 }
+
+// console.log(max("0:0:0:0:0:01:0:0/64"));
 
 export function max(cidr: string): string {
-  cidr = toCidr(cidr);
-  let initial = toInt(min(cidr));
-  let add = 2n ** (32n - mask(cidr));
+  let initial: bigint = toInt(min((cidr = toCidr(cidr)))), add = isIPv4(address(cidr)) ? 2n ** (32n - mask(cidr)) : 2n ^ (128n - mask(cidr));
   return toString(initial + add - 1n);
-}
-
-export function fistIp(cidr: string): string {
-  return toString(toInt(min(toCidr(cidr)))+1n);
-}
-
-export function count(cidr: string): bigint {
-  return 2n ** (32n - mask(toCidr(cidr)));
-}
-
-export function usable(cidr: string): string[] {
-  cidr = toCidr(cidr);
-  const result = [];
-  let start = toInt(min(cidr)) + 1n;
-  const stop = toInt(max(cidr));
-  while (start < stop) {
-    result.push(toString(start));
-    start += 1n;
-  }
-  return result;
-}
-
-/**
- * get representation of subnet attach's ip's
- *
- * @example
- * ```js
- * wildcardmask("0.0.0.0/0"); // => "255.255.255.255"
- * wildcardmask("127.0.0.0/1"); // => "127.255.255.255"
- * wildcardmask("192.0.0.0/24"); // => "0.0.0.255"
- * ```
- *
- * @param cidr
- * @returns
- */
-export function wildcardmask(cidr: string): string {
-  return toString(2n ** (32n - mask(toCidr(cidr))) - 1n);
-}
-
-export function subnets(cidr: string, subMask: bigint, limit: bigint): string[] {
-  // const mainMask: number = mask(cidr);
-  const step = 2n ** (32n - subMask), subnets = [];
-  let count = toInt(address(cidr)) - step;
-  let maxIp = toInt(max(cidr));
-
-  limit = count + limit * step;
-  if (limit < maxIp) maxIp = limit;
-  while (count < maxIp) subnets.push(toString(count += step).concat("/", String(subMask)));
-  return subnets;
-}
-
-export function ips(cidr: string): string[] {
-  let ips: string[] = [];
-  const maxIp = toInt(max(toCidr(cidr)));
-  let current: string = address(cidr);
-  while (toInt(current) <= maxIp) {
-    ips.push(current);
-    current = nextIp(current);
-  }
-  return ips;
 }
 
 /**
@@ -344,64 +169,23 @@ export function includes(cidr: string, ip: string): boolean {
 }
 
 /**
- * Get next IP from cidr and skip if exist's else throw if no avaible IP's
- * @param cidr
- * @param skips
- * @returns
- */
-export function nextIpSequence(cidr: string, skips?: string[]): string {
-  const [minIp, maxIp] = toIntRange(toCidr(cidr));
-  let index = 1n;
-  while ((minIp + index) < maxIp) {
-    const ip = toString(minIp + (++index));
-    if (!((skips||[]).includes(ip))) return ip;
-  }
-  throw new Error("Cannot get random IP or overflow IPs");
-}
-
-/**
- * Convert ipv4 in to ipv6
+ * Get CIDR from ip
  *
- * @example
- * ```js
- * toV6("192.178.66.255"); // => "0000:0000:0000:0000:0000:ffff:c0b2:42ff"
- * toV6("192.178.66.255", false); // => "0000:0000:0000:0000:0000:ffff:c0b2:42ff"
- * toV6("192.178.66.255", true); // => "::ffff:c0b2:42ff"
- * ```
- */
-export function toV6(ipv4: string, compressedv6: boolean = false) {
-  if (!ipv4) throw new Error("ipv4 is required");
-  if (typeof ipv4 !== "string") throw new Error("ipv4 must be a string");
-  const classValues = ipv4.split(".").map(s => parseInt(s.split("/")[0]) % 256);
-  if (classValues.length !== 4) throw "Invalid Address";
-  const hexaCode = (hexaVal: number) => hexaVal >= 0 && hexaVal <= 9 ? hexaVal : (hexaVal === 10 ? "a" : (hexaVal === 11 ? "b" : (hexaVal === 12 ? "c" : (hexaVal === 13 ? "d" : (hexaVal === 14 ? "e" : "f")))));
-  const str = classValues.reduce((acc, val, ind) => {
-    const mod = +val >= 16 ? +val%16 : +val;
-    const modRes = hexaCode(mod);
-    const dividerRes = hexaCode(+val >= 16 ? (val-mod)/16 : 0);
-    return ind === 1 ? `${acc}${dividerRes}${modRes}:`:`${acc}${dividerRes}${modRes}`;
-  }, "");
-  return ("").concat(compressedv6 ? ":" : "0000:0000:0000:0000:0000", (":ffff:"), str);
-}
-
-/**
- * Convert IPv6 to valid IPv4
- * @param ipv6
+ * @param ip - Input ip
  * @returns
  */
-export function fromV6(ipv6: string) {
-  if (!ipv6 || typeof ipv6 !== "string" || !((["::ffff:", "0000:0000:0000:0000:0000:ffff:", "2002:"]).some(s => ipv6.startsWith(s) && (s === "2002:" ? (ipv6.endsWith("::")) : true)))) throw new Error("Invalid block input");
-  let b64: string;
-  if (ipv6.startsWith("2002:")) b64 = ipv6.slice(5, -2);
-  else if (ipv6.startsWith("::ffff:")) b64 = ipv6.slice(7);
-  else b64 = ipv6.slice(30);
-  b64 = b64.split(":").join("");
-  if (b64.split(".").length === 4 && !(b64.split(".").map(s => parseInt(s)).some(s => !(s >= 0 && s <= 255)))) return b64;
-  if (b64.length > 8) throw new Error("invalid ipv4 in ipv6");
-  return ([
-    (parseInt(b64.substring(0, 2), 16) & 0xFF),
-    (parseInt(b64.substring(2, 4), 16) & 0xFF),
-    (parseInt(b64.substring(4, 6), 16) & 0xFF),
-    (parseInt(b64.substring(6, 8), 16) & 0xFF)
-  ]).join(".");
+export function toCidr(ip: string | bigint): string {
+  if (typeof ip === "bigint") ip = toString(ip);
+  else if (ip.indexOf("/") !== -1) {
+    const mask = BigInt(ip.split("/")[1]);
+    if (mask >= 0 && mask <= 128) return ip;
+    ip = address(ip);
+  }
+  let mask = 8, limitMask = isIPv4(ip) ? 32 : 128;
+  while (true) {
+    if (mask >= limitMask) break;
+    mask += 4;
+    if (includes(String().concat(ip, "/", String(mask)), ip)) break;
+  }
+  return min(`${ip}/${mask}`)+"/"+mask;
 }
