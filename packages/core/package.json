@@ -24,7 +24,6 @@
   "dependencies": {
     "@sirherobrine23/ar": "3.7.0",
     "@sirherobrine23/cloud": "3.7.0",
-    "@sirherobrine23/dpkg": "3.7.0",
     "@sirherobrine23/docker-registry": "3.7.0",
     "@sirherobrine23/extends": "3.7.0",
     "@sirherobrine23/http": "3.7.0"
@@ -32,7 +31,6 @@
   "workspaces": [
     "../ar",
     "../cloud",
-    "../dpkg",
     "../docker",
     "../extends",
     "../http"
